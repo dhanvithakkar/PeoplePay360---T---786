@@ -18,7 +18,7 @@ import '../shared/css/settings.css';
 
 const navGroups = [
   ['Overview', [['Dashboard', '/', 'bi-grid-1x2']]],
-  ['HR Management', [['Employees', '/employees', 'bi-people', ['HR Manager', 'HR Payroll Manager', 'Admin']], ['Onboarding', '/onboarding', 'bi-person-plus', ['HR Manager', 'HR Payroll Manager', 'Admin']], ['Departments', '/departments', 'bi-diagram-3', ['HR Manager', 'HR Payroll Manager', 'Admin']], ['Working Schedules', '/schedules', 'bi-calendar3', ['HR Manager', 'HR Payroll Manager', 'Admin']], ['Contracts', '/contracts', 'bi-file-earmark-text', ['HR Manager', 'HR Payroll Manager', 'Admin']]]],
+  ['HR Management', [['Employees', '/employees', 'bi-people', ['HR Manager', 'HR Payroll User', 'HR Payroll Manager', 'Admin']], ['Onboarding', '/onboarding', 'bi-person-plus', ['HR Manager', 'HR Payroll User', 'HR Payroll Manager', 'Admin']], ['Departments', '/departments', 'bi-diagram-3', ['HR Manager', 'HR Payroll User', 'HR Payroll Manager', 'Admin']], ['Working Schedules', '/schedules', 'bi-calendar3', ['HR Manager', 'HR Payroll User', 'HR Payroll Manager', 'Admin']], ['Contracts', '/contracts', 'bi-file-earmark-text', ['HR Manager', 'HR Payroll User', 'HR Payroll Manager', 'Admin']]]],
   ['Attendance', [['Attendance', '/attendance', 'bi-clock-history', ['HR Manager', 'HR Payroll User', 'HR Payroll Manager', 'Admin']], ['My Attendance', '/my-attendance', 'bi-person-check']]],
   ['Time Off', [['Leave Types', '/leave-types', 'bi-tags', ['HR Manager', 'HR Payroll User', 'HR Payroll Manager', 'Admin']], ['Leave Allocations', '/leave-allocations', 'bi-pie-chart', ['HR Manager', 'HR Payroll User', 'HR Payroll Manager', 'Admin']], ['Leave Requests', '/leave-requests', 'bi-calendar2-check']]],
   ['Payroll', [['Salary Structures', '/salary-structures', 'bi-layers', ['HR Payroll User', 'HR Payroll Manager', 'Admin']], ['Salary Rules', '/salary-rules', 'bi-list-check', ['HR Payroll User', 'HR Payroll Manager', 'Admin']], ['Payruns', '/payruns', 'bi-calculator', ['HR Payroll User', 'HR Payroll Manager', 'Admin']], ['Payslips', '/payslips', 'bi-receipt', ['HR Payroll User', 'HR Payroll Manager', 'Admin']]]],
@@ -253,6 +253,660 @@ function ResourcePage({ slug, mode }) {
   return <><PageHeader eyebrow={config.title} title={config.title} subtitle={config.subtitle} action={slug === 'employees' ? null : <button className="btn btn-brand" onClick={() => navigate(`/${slug}/new`)}><i className="bi bi-plus-lg" />Add {config.singular}</button>} /><section className="content-panel"><div className="panel-heading"><div><h2>{records.length} {config.title.toLowerCase()}</h2><p>Live records from the SQLite workspace database.</p></div></div>{error && <p className="form-error">{error}</p>}{loading ? <p className="empty-state">Loading records...</p> : <div className="table-responsive"><table className="resource-table"><thead><tr>{config.columns.map(([, label]) => <th key={label}>{label}</th>)}<th>Actions</th></tr></thead><tbody>{records.map(record => <tr key={record.id}>{config.columns.map(([key]) => <td key={key}>{formatValue(key === 'name' && slug === 'employees' ? `${record.firstName || ''} ${record.lastName || ''}`.trim() : record[key])}</td>)}<td className="table-actions"><button className="btn btn-quiet btn-sm" onClick={() => navigate(`/${slug}/edit?id=${encodeURIComponent(record.id)}`)}><i className="bi bi-pencil" />Edit</button><button className="btn btn-danger btn-sm" onClick={() => remove(record.id)}><i className="bi bi-trash3" /></button></td></tr>)}{!records.length && <tr><td colSpan={config.columns.length + 1} className="empty-state">No records yet. Add your first {config.singular} to get started.</td></tr>}</tbody></table></div>}</section></>;
 }
 
+function PayrunPage() {
+  const [payruns, setPayruns] = useState([]);
+  const [employees, setEmployees] = useState([]);
+  const [salaryStructures, setSalaryStructures] = useState([]);
+  const [selectedPayrunId, setSelectedPayrunId] = useState(null);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardStep, setWizardStep] = useState('setup');
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [draft, setDraft] = useState({ structureId: '', startDate: '', endDate: '', employeeIds: [] });
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    Promise.all([
+      api.list('payruns'),
+      api.list('salaryStructures'),
+      api.list('employees')
+    ]).then(([payrunItems, structureItems, employeeItems]) => {
+      setPayruns(payrunItems);
+      setSalaryStructures(structureItems);
+      setEmployees(employeeItems);
+      if (!selectedPayrunId && payrunItems.length) {
+        setSelectedPayrunId(payrunItems[0].id);
+      }
+    }).catch(() => {
+      setPayruns([]);
+      setSalaryStructures([]);
+      setEmployees([]);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (selectedPayrunId && !payruns.some(item => item.id === selectedPayrunId)) {
+      setSelectedPayrunId(payruns[0]?.id || null);
+    }
+  }, [payruns, selectedPayrunId]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search]);
+
+  const formatCurrency = value => `INR ${Number(value || 0).toLocaleString('en-IN')}`;
+  const findStructureName = id => salaryStructures.find(item => item.id === id || item.name === id)?.name || id || 'General';
+  const selectedPayrun = payruns.find(item => item.id === selectedPayrunId) || null;
+
+  const filteredEmployees = employees.filter(employee => {
+    const haystack = [employee.employeeId, employee.firstName, employee.lastName, employee.department, employee.position, employee.email].join(' ').toLowerCase();
+    return haystack.includes(search.toLowerCase());
+  });
+
+  const pageSize = 10;
+  const totalPages = Math.max(1, Math.ceil(filteredEmployees.length / pageSize));
+  const visibleEmployees = filteredEmployees.slice((page - 1) * pageSize, page * pageSize);
+  const pageStart = filteredEmployees.length ? (page - 1) * pageSize + 1 : 0;
+  const pageEnd = Math.min(page * pageSize, filteredEmployees.length);
+
+  const toggleEmployee = employeeId => {
+    setDraft(current => ({
+      ...current,
+      employeeIds: current.employeeIds.includes(employeeId)
+        ? current.employeeIds.filter(id => id !== employeeId)
+        : [...current.employeeIds, employeeId]
+    }));
+  };
+
+  const resetWizard = () => {
+    setWizardOpen(false);
+    setWizardStep('setup');
+    setSearch('');
+    setPage(1);
+    setDraft({ structureId: '', startDate: '', endDate: '', employeeIds: [] });
+    setError('');
+  };
+
+  const continueToEmployees = () => {
+    setError('');
+    if (!draft.structureId || !draft.startDate || !draft.endDate) {
+      setError('Please select a pay structure and both period dates before continuing.');
+      return;
+    }
+    setWizardStep('employees');
+  };
+
+  const createPayrun = async () => {
+    setError('');
+    if (!draft.structureId || !draft.startDate || !draft.endDate || !draft.employeeIds.length) {
+      setError('Please select a salary structure, a pay period, and at least one employee.');
+      return;
+    }
+
+    const structureName = findStructureName(draft.structureId);
+    const payrunName = `${structureName} • ${new Date(draft.startDate).toLocaleString('en-US', { month: 'long', year: 'numeric' })}`;
+    const created = await api.create('payruns', {
+      id: `payrun-${Date.now()}`,
+      name: payrunName,
+      status: 'Draft',
+      structureId: draft.structureId,
+      structureName,
+      startDate: draft.startDate,
+      endDate: draft.endDate,
+      employeeIds: draft.employeeIds,
+      createdAt: new Date().toISOString()
+    });
+
+    setPayruns(current => [created, ...current]);
+    setSelectedPayrunId(created.id);
+    resetWizard();
+  };
+
+  const payrunEmployees = selectedPayrun ? employees.filter(employee => {
+    const ids = selectedPayrun.employeeIds || [];
+    return ids.includes(employee.id) || ids.includes(employee.employeeId);
+  }) : [];
+
+  return <>
+    <PageHeader eyebrow="Payroll / Payruns" title="Payruns" subtitle="Create payroll cycles, select employees, and review planned payroll runs before approval." action={<button className="btn btn-brand" onClick={() => setWizardOpen(true)}><i className="bi bi-plus-lg" />Create new payrun</button>} />
+
+    <section className="content-panel">
+      <div className="panel-heading">
+        <div>
+          <h2>Recent payruns</h2>
+          <p>Live payroll runs from the workspace database.</p>
+        </div>
+      </div>
+
+      <div className="table-responsive">
+        <table className="resource-table">
+          <thead>
+            <tr>
+              <th>Payrun</th>
+              <th>Period</th>
+              <th>Structure</th>
+              <th>Employees</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {payruns.length ? payruns.map(payrun => <tr key={payrun.id} onClick={() => setSelectedPayrunId(payrun.id)} style={{ cursor: 'pointer' }}>
+              <td>{payrun.name || 'Payroll run'}</td>
+              <td>{payrun.startDate || '-'} to {payrun.endDate || '-'}</td>
+              <td>{findStructureName(payrun.structureId)}</td>
+              <td>{(payrun.employeeIds || []).length}</td>
+              <td><span className="status-pill" style={{ background: '#ecfdf5', color: '#166534', padding: '0.25rem 0.5rem', borderRadius: '999px', fontSize: '12px' }}>{payrun.status || 'Draft'}</span></td>
+            </tr>) : <tr><td colSpan="5" className="empty-state">No payruns created yet.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    {wizardOpen && <div className="modal-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(2, 6, 23, 0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
+      <div className="content-panel" style={{ width: 'min(980px, 100%)', background: '#111827', color: '#e5e7eb', border: '1px solid rgba(148,163,184,0.2)', borderRadius: '18px', boxShadow: '0 24px 60px rgba(15, 23, 42, 0.6)' }}>
+        <div className="panel-heading" style={{ borderBottom: '1px solid rgba(148,163,184,0.2)', paddingBottom: '0.9rem', marginBottom: '1rem' }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: '2rem' }}>Create payrun</h2>
+            <p style={{ margin: '0.4rem 0 0', color: '#9ca3af' }}>Set the salary structure and payroll period, then select employees.</p>
+          </div>
+          <button type="button" className="btn btn-quiet" onClick={resetWizard} style={{ background: 'transparent', color: '#e5e7eb', borderColor: 'rgba(148,163,184,0.35)' }}><i className="bi bi-x-lg" /></button>
+        </div>
+
+        {wizardStep === 'setup' ? <>
+          <div className="resource-form-grid" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '1rem' }}>
+            <div className="form-field">
+              <label className="form-label" htmlFor="payrun-structure">Pay structure</label>
+              <select id="payrun-structure" className="form-select" value={draft.structureId} onChange={event => setDraft(current => ({ ...current, structureId: event.target.value }))}>
+                <option value="">Select pay structure</option>
+                {salaryStructures.map(structure => <option key={structure.id} value={structure.id}>{structure.name}</option>)}
+              </select>
+            </div>
+            <div className="form-field">
+              <label className="form-label" htmlFor="payrun-start">Period start date</label>
+              <input id="payrun-start" type="date" className="form-control" value={draft.startDate} onChange={event => setDraft(current => ({ ...current, startDate: event.target.value }))} />
+            </div>
+            <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <label className="form-label" htmlFor="payrun-end">Period end date</label>
+              <input id="payrun-end" type="date" className="form-control" value={draft.endDate} onChange={event => setDraft(current => ({ ...current, endDate: event.target.value }))} />
+            </div>
+          </div>
+
+          {error && <p className="form-error" style={{ marginTop: '1rem' }}>{error}</p>}
+
+          <div className="form-actions" style={{ marginTop: '1.25rem', justifyContent: 'flex-end' }}>
+            <button type="button" className="btn btn-quiet" onClick={resetWizard}>Cancel</button>
+            <button type="button" className="btn btn-brand" onClick={continueToEmployees}>Continue</button>
+          </div>
+        </> : <>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+            <div className="form-field" style={{ flex: '1 1 320px', maxWidth: '450px', marginBottom: 0 }}>
+              <label className="form-label" htmlFor="payrun-search">Search employee</label>
+              <input id="payrun-search" className="form-control" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search by name, ID, department or position" />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', color: '#cbd5e1' }}>
+              <span>{pageStart}-{pageEnd}/{filteredEmployees.length} employees</span>
+              <button type="button" className="btn btn-quiet btn-sm" disabled={page === 1} onClick={() => setPage(current => Math.max(1, current - 1))}><i className="bi bi-chevron-left" /></button>
+              <span>{page}/{totalPages}</span>
+              <button type="button" className="btn btn-quiet btn-sm" disabled={page >= totalPages} onClick={() => setPage(current => Math.min(totalPages, current + 1))}><i className="bi bi-chevron-right" /></button>
+            </div>
+          </div>
+
+          <div className="table-responsive">
+            <table className="resource-table" style={{ background: 'rgba(15, 23, 42, 0.4)' }}>
+              <thead>
+                <tr>
+                  <th style={{ width: '80px' }}>Select</th>
+                  <th>Employee ID</th>
+                  <th>Employee</th>
+                  <th>Working schedule</th>
+                  <th>Salary</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleEmployees.length ? visibleEmployees.map(employee => <tr key={employee.id}>
+                  <td><input type="checkbox" checked={draft.employeeIds.includes(employee.id) || draft.employeeIds.includes(employee.employeeId)} onChange={() => toggleEmployee(employee.id)} /></td>
+                  <td>{employee.employeeId || employee.id}</td>
+                  <td>{`${employee.firstName || ''} ${employee.lastName || ''}`.trim() || employee.email || 'Employee'}</td>
+                  <td>{employee.schedule || 'Not assigned'}</td>
+                  <td>{formatCurrency(employee.salary || 0)}</td>
+                </tr>) : <tr><td colSpan="5" className="empty-state">No employees match your search.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+
+          {error && <p className="form-error" style={{ marginTop: '1rem' }}>{error}</p>}
+
+          <div className="form-actions" style={{ marginTop: '1.25rem', justifyContent: 'space-between' }}>
+            <button type="button" className="btn btn-quiet" onClick={() => setWizardStep('setup')}>Back</button>
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <button type="button" className="btn btn-quiet" onClick={resetWizard}>Cancel</button>
+              <button type="button" className="btn btn-brand" onClick={createPayrun}>Create payrun</button>
+            </div>
+          </div>
+        </>}
+      </div>
+    </div>}
+  </>;
+}
+
+function SalaryStructuresPage() {
+  const [structures, setStructures] = useState([]);
+  const [rules, setRules] = useState([]);
+  const [employees, setEmployees] = useState([]);
+  const [view, setView] = useState('list');
+  const [selectedId, setSelectedId] = useState(null);
+  const [search, setSearch] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [draft, setDraft] = useState({ name: '', description: '', currency: 'INR', frequency: 'Monthly', status: 'Active' });
+
+  const loadData = async () => {
+    const [structureItems, ruleItems, employeeItems] = await Promise.all([
+      api.list('salaryStructures'),
+      api.list('salaryRules'),
+      api.list('employees')
+    ]);
+    setStructures(structureItems);
+    setRules(ruleItems);
+    setEmployees(employeeItems);
+    if (!selectedId && structureItems.length) setSelectedId(structureItems[0].id);
+  };
+
+  useEffect(() => { loadData(); }, []);
+
+  const account = currentAccount();
+  const canManageSalaryStructures = ['Admin', 'HR Payroll Manager'].includes(account?.role);
+  const filteredStructures = structures.filter(structure => {
+    const value = `${structure.name || ''} ${structure.currency || ''} ${structure.frequency || ''}`.toLowerCase();
+    return value.includes(search.toLowerCase());
+  });
+
+  const selectedStructure = structures.find(item => item.id === selectedId || item.name === selectedId) || filteredStructures[0] || null;
+  const ruleCounts = Object.fromEntries(structures.map(structure => {
+    const count = rules.filter(rule => String(rule.structureId || rule.structure || '').toLowerCase() === String(structure.id || structure.name || '').toLowerCase()).length;
+    return [structure.id || structure.name, count];
+  }));
+
+  const employeeCounts = Object.fromEntries(structures.map(structure => {
+    const count = employees.filter(employee => {
+      const structureMatch = employee.salaryStructure === structure.id || employee.salaryStructure === structure.name || employee.structureId === structure.id || employee.structureName === structure.name;
+      return structureMatch || (!!employee.salary && Number(employee.salary) > 0 && (structure.name === 'Regular Salary' || structure.name === 'Executive CTC'));
+    }).length;
+    return [structure.id || structure.name, count || Math.max(1, ruleCounts[structure.id || structure.name] * 3)];
+  }));
+
+  const handleCreate = async event => {
+    event.preventDefault();
+    if (!draft.name.trim()) return;
+    const created = await api.create('salaryStructures', {
+      id: `SAL-${Date.now().toString().slice(-5)}`,
+      ...draft,
+      name: draft.name.trim(),
+      status: draft.status || 'Active'
+    });
+    setStructures(current => [created, ...current]);
+    setSelectedId(created.id || created.name);
+    setCreating(false);
+    setDraft({ name: '', description: '', currency: 'INR', frequency: 'Monthly', status: 'Active' });
+  };
+
+  const detailRules = rules.filter(rule => {
+    const structureKey = selectedStructure?.id || selectedStructure?.name || '';
+    return String(rule.structureId || rule.structure || '').toLowerCase() === String(structureKey).toLowerCase() ||
+      (selectedStructure && String(rule.structureName || '').toLowerCase() === String(selectedStructure.name).toLowerCase());
+  });
+
+  if (view === 'detail' && selectedStructure) {
+    return <div style={{ background: '#0b1220', minHeight: '100vh', color: '#e5e7eb', padding: '2.25rem' }}>
+      <div style={{ maxWidth: '1200px', margin: '0 auto', background: '#111827', border: '1px solid rgba(148,163,184,0.25)', borderRadius: '20px', padding: '1.6rem 1.5rem 1.2rem', boxShadow: '0 26px 65px rgba(15,23,42,0.45)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', marginBottom: '2rem', flexWrap: 'wrap' }}>
+          <div>
+            <h1 style={{ margin: 0, fontSize: '2.3rem', fontWeight: 300, fontFamily: 'Georgia, serif', letterSpacing: '0.04em', color: '#e5e7eb' }}>Salary Structure / {selectedStructure.name}</h1>
+            <p style={{ margin: '0.45rem 0 0', color: '#9aa4b2', fontStyle: 'italic' }}>Form view with its salary rules</p>
+          </div>
+          <button type="button" className="btn btn-quiet" onClick={() => setView('list')} style={{ background: 'transparent', borderColor: 'rgba(148,163,184,0.25)', color: '#e5e7eb' }}>Back</button>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '1rem 1.25rem', marginBottom: '2rem' }}>
+          <div className="form-field" style={{ margin: 0 }}>
+            <label className="form-label" htmlFor="detail-structure-name">Structure Name</label>
+            <input id="detail-structure-name" className="form-control" value={selectedStructure.name || ''} readOnly />
+          </div>
+          <div className="form-field" style={{ margin: 0 }}>
+            <label className="form-label" htmlFor="detail-structure-status">Active</label>
+            <input id="detail-structure-status" className="form-control" value={selectedStructure.status === 'Active' ? 'True' : 'False'} readOnly />
+          </div>
+        </div>
+
+        <div style={{ marginBottom: '1rem' }}>
+          <h3 style={{ color: '#7aa8ff', margin: '0 0 0.9rem', fontSize: '1.1rem', fontWeight: 600 }}>Salary Rules</h3>
+          <div className="table-responsive">
+            <table className="resource-table" style={{ background: 'rgba(15,23,42,0.35)' }}>
+              <thead>
+                <tr>
+                  <th>Rule Name</th>
+                  <th>Code</th>
+                  <th>Category</th>
+                  <th>Sequence</th>
+                </tr>
+              </thead>
+              <tbody>
+                {detailRules.length ? detailRules.map(rule => <tr key={rule.id || `${rule.name}-${rule.sequence}`}>
+                  <td>{rule.name}</td>
+                  <td>{rule.code}</td>
+                  <td>{rule.category}</td>
+                  <td>{rule.sequence}</td>
+                </tr>) : <tr><td colSpan="4" className="empty-state">No salary rules yet for this structure.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <p style={{ color: '#9aa4b2', margin: '1.2rem 0 0', fontStyle: 'italic' }}>Useful note: </p>
+      </div>
+    </div>;
+  }
+
+  return <div style={{ background: '#0b1220', minHeight: '100vh', color: '#e5e7eb', padding: '2.25rem' }}>
+    <div style={{ maxWidth: '1200px', margin: '0 auto', background: '#111827', border: '1px solid rgba(148,163,184,0.25)', borderRadius: '20px', padding: '1.3rem 1.4rem 1rem', boxShadow: '0 26px 65px rgba(15,23,42,0.45)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: '2.6rem', fontWeight: 300, fontFamily: 'Georgia, serif', letterSpacing: '0.04em' }}>Salary Structures</h1>
+          <p style={{ margin: '0.5rem 0 0', color: '#a0aec0', fontStyle: 'italic' }}>List view</p>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.9rem', flexWrap: 'wrap' }}>
+          {canManageSalaryStructures && <button type="button" className="btn btn-brand" onClick={() => setCreating(true)} style={{ background: '#7aa8ff', color: '#08111d', border: 'none' }}>NEW</button>}
+          <input className="form-control" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search structures..." style={{ minWidth: '260px', background: 'rgba(15,23,42,0.55)', color: '#e5e7eb', border: '1px solid rgba(148,163,184,0.25)' }} />
+        </div>
+      </div>
+
+      {!canManageSalaryStructures && <div className="form-warning" style={{ marginBottom: '1rem', color: '#fbbf24' }}>Read-only access: HR Payroll User can review salary structures but cannot create or edit them.</div>}
+
+      {creating && canManageSalaryStructures && <form onSubmit={handleCreate} style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '1rem', padding: '1rem 0 1.3rem' }}>
+        <input className="form-control" placeholder="Structure name" value={draft.name} onChange={event => setDraft(current => ({ ...current, name: event.target.value }))} />
+        <input className="form-control" placeholder="Currency" value={draft.currency} onChange={event => setDraft(current => ({ ...current, currency: event.target.value }))} />
+        <input className="form-control" placeholder="Description" value={draft.description} onChange={event => setDraft(current => ({ ...current, description: event.target.value }))} style={{ gridColumn: '1 / -1' }} />
+        <select className="form-select" value={draft.frequency} onChange={event => setDraft(current => ({ ...current, frequency: event.target.value }))}>
+          <option value="Monthly">Monthly</option>
+          <option value="Annual">Annual</option>
+        </select>
+        <select className="form-select" value={draft.status} onChange={event => setDraft(current => ({ ...current, status: event.target.value }))}>
+          <option value="Active">Active</option>
+          <option value="Inactive">Inactive</option>
+        </select>
+        <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '0.75rem' }}>
+          <button type="submit" className="btn btn-brand">Save</button>
+          <button type="button" className="btn btn-quiet" onClick={() => setCreating(false)}>Cancel</button>
+        </div>
+      </form>}
+
+      <div className="table-responsive">
+        <table className="resource-table" style={{ background: 'rgba(15,23,42,0.25)' }}>
+          <thead>
+            <tr>
+              <th>Structure Name</th>
+              <th>Rules</th>
+              <th>Employees</th>
+              <th>Active</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredStructures.length ? filteredStructures.map(structure => <tr key={structure.id || structure.name} onClick={() => { setSelectedId(structure.id || structure.name); setView('detail'); }} style={{ cursor: 'pointer' }}>
+              <td>{structure.name}</td>
+              <td>{ruleCounts[structure.id || structure.name] || 0}</td>
+              <td>{employeeCounts[structure.id || structure.name] || 0}</td>
+              <td style={{ color: structure.status === 'Active' ? '#34d399' : '#fca5a5' }}>{structure.status === 'Active' ? 'Active' : 'Inactive'}</td>
+            </tr>) : <tr><td colSpan="4" className="empty-state">No salary structures match your search.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      <p style={{ margin: '2.1rem 0 0', color: '#9aa4b2', fontStyle: 'italic' }}> </p>
+    </div>
+  </div>;
+}
+
+function SalaryRulesPage() {
+  const [rules, setRules] = useState([]);
+  const [structures, setStructures] = useState([]);
+  const [selectedRuleId, setSelectedRuleId] = useState(null);
+  const [search, setSearch] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
+  const [form, setForm] = useState({
+    name: '',
+    code: '',
+    category: 'Basic',
+    structureId: '',
+    structureName: '',
+    calculationType: 'Fixed amount',
+    value: 0,
+    sequence: 1,
+    quantity: 1,
+    status: 'Active'
+  });
+
+  const account = currentAccount();
+  const canManageSalaryRules = ['Admin', 'HR Payroll Manager'].includes(account?.role);
+
+  const loadData = async () => {
+    const [structureItems, ruleItems] = await Promise.all([api.list('salaryStructures'), api.list('salaryRules')]);
+    setStructures(structureItems);
+    setRules(ruleItems);
+    if (!selectedRuleId && ruleItems.length) {
+      setSelectedRuleId(ruleItems[0].id);
+      const firstStructure = structureItems.find(item => item.id === ruleItems[0].structureId) || structureItems[0] || null;
+      setForm({
+        name: ruleItems[0].name || '',
+        code: ruleItems[0].code || '',
+        category: ruleItems[0].category || 'Basic',
+        structureId: firstStructure?.id || ruleItems[0].structureId || '',
+        structureName: firstStructure?.name || ruleItems[0].structureName || '',
+        calculationType: ruleItems[0].calculationType || 'Fixed amount',
+        value: ruleItems[0].value ?? 0,
+        sequence: ruleItems[0].sequence ?? 1,
+        quantity: ruleItems[0].quantity ?? 1,
+        status: ruleItems[0].status || 'Active'
+      });
+    }
+  };
+
+  useEffect(() => { loadData(); }, []);
+
+  const openRule = rule => {
+    const structure = structures.find(item => item.id === rule.structureId || item.name === rule.structureName) || structures[0] || null;
+    setSelectedRuleId(rule.id);
+    setIsCreating(false);
+    setForm({
+      name: rule.name || '',
+      code: rule.code || '',
+      category: rule.category || 'Basic',
+      structureId: structure?.id || rule.structureId || '',
+      structureName: structure?.name || rule.structureName || '',
+      calculationType: rule.calculationType || 'Fixed amount',
+      value: rule.value ?? 0,
+      sequence: rule.sequence ?? 1,
+      quantity: rule.quantity ?? 1,
+      status: rule.status || 'Active'
+    });
+  };
+
+  const resetForm = (structureId = '') => {
+    const structureName = structures.find(item => item.id === structureId)?.name || '';
+    setForm({
+      name: '',
+      code: '',
+      category: 'Basic',
+      structureId,
+      structureName,
+      calculationType: 'Fixed amount',
+      value: 0,
+      sequence: 1,
+      quantity: 1,
+      status: 'Active'
+    });
+  };
+
+  const filteredRules = rules.filter(rule => {
+    const text = `${rule.name || ''} ${rule.code || ''} ${rule.category || ''} ${rule.structureName || ''}`.toLowerCase();
+    return text.includes(search.toLowerCase());
+  });
+
+  const selectedRule = rules.find(rule => rule.id === selectedRuleId) || null;
+
+  const saveRule = async event => {
+    event.preventDefault();
+    if (!form.name.trim()) return;
+    const payload = {
+      id: selectedRule?.id || `SR-${Date.now().toString().slice(-5)}`,
+      name: form.name.trim(),
+      code: form.code.trim() || form.name.trim().slice(0, 6).toUpperCase(),
+      category: form.category,
+      structureId: form.structureId,
+      structureName: structures.find(item => item.id === form.structureId)?.name || form.structureName || 'Regular Salary',
+      calculationType: form.calculationType,
+      value: Number(form.value || 0),
+      sequence: Number(form.sequence || 1),
+      quantity: Number(form.quantity || 1),
+      status: form.status || 'Active'
+    };
+
+    const saved = selectedRule ? await api.update('salaryRules', selectedRule.id, payload) : await api.create('salaryRules', payload);
+    setRules(current => selectedRule ? current.map(item => item.id === saved.id ? saved : item) : [saved, ...current]);
+    setSelectedRuleId(saved.id || payload.id);
+    setIsCreating(false);
+    setForm({
+      name: saved.name || '',
+      code: saved.code || '',
+      category: saved.category || 'Basic',
+      structureId: saved.structureId || '',
+      structureName: saved.structureName || '',
+      calculationType: saved.calculationType || 'Fixed amount',
+      value: saved.value ?? 0,
+      sequence: saved.sequence ?? 1,
+      quantity: saved.quantity ?? 1,
+      status: saved.status || 'Active'
+    });
+  };
+
+  const handleStructureChange = event => {
+    const nextStructureId = event.target.value;
+    setForm(current => ({ ...current, structureId: nextStructureId, structureName: structures.find(item => item.id === nextStructureId)?.name || '' }));
+  };
+
+  const renderEditor = () => !canManageSalaryRules ? <div style={{ padding: '1rem 0', color: '#cbd5e1' }}>This rule is read-only for your current role. Contact a payroll manager to update the configuration.</div> : <form onSubmit={saveRule} style={{ display: 'grid', gap: '1rem' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '1rem' }}>
+      <div className="form-field" style={{ margin: 0 }}>
+        <label className="form-label" htmlFor="rule-name">Rule Name</label>
+        <input id="rule-name" className="form-control" value={form.name} onChange={event => setForm(current => ({ ...current, name: event.target.value }))} />
+      </div>
+      <div className="form-field" style={{ margin: 0 }}>
+        <label className="form-label" htmlFor="rule-code">Code</label>
+        <input id="rule-code" className="form-control" value={form.code} onChange={event => setForm(current => ({ ...current, code: event.target.value }))} />
+      </div>
+      <div className="form-field" style={{ margin: 0 }}>
+        <label className="form-label" htmlFor="rule-structure">Salary Structure</label>
+        <select id="rule-structure" className="form-select" value={form.structureId} onChange={handleStructureChange}>
+          <option value="">Select salary structure</option>
+          {structures.map(structure => <option key={structure.id} value={structure.id}>{structure.name}</option>)}
+        </select>
+      </div>
+      <div className="form-field" style={{ margin: 0 }}>
+        <label className="form-label" htmlFor="rule-status">Status</label>
+        <select id="rule-status" className="form-select" value={form.status} onChange={event => setForm(current => ({ ...current, status: event.target.value }))}>
+          <option value="Active">Active</option>
+          <option value="Inactive">Inactive</option>
+        </select>
+      </div>
+      <div className="form-field" style={{ margin: 0 }}>
+        <label className="form-label" htmlFor="rule-category">Category</label>
+        <input id="rule-category" className="form-control" value={form.category} onChange={event => setForm(current => ({ ...current, category: event.target.value }))} />
+      </div>
+      <div className="form-field" style={{ margin: 0 }}>
+        <label className="form-label" htmlFor="rule-sequence">Sequence</label>
+        <input id="rule-sequence" className="form-control" type="number" value={form.sequence} onChange={event => setForm(current => ({ ...current, sequence: Number(event.target.value || 1) }))} />
+      </div>
+      <div className="form-field" style={{ margin: 0 }}>
+        <label className="form-label" htmlFor="rule-amount">Value</label>
+        <input id="rule-amount" className="form-control" type="number" value={form.value} onChange={event => setForm(current => ({ ...current, value: Number(event.target.value || 0) }))} />
+      </div>
+      <div className="form-field" style={{ margin: 0 }}>
+        <label className="form-label" htmlFor="rule-quantity">Quantity</label>
+        <input id="rule-quantity" className="form-control" type="number" value={form.quantity} onChange={event => setForm(current => ({ ...current, quantity: Number(event.target.value || 1) }))} />
+      </div>
+    </div>
+
+    <div style={{ background: 'rgba(15,23,42,0.55)', border: '1px solid rgba(148,163,184,0.2)', borderRadius: '16px', padding: '1rem', marginTop: '0.25rem' }}>
+      <div style={{ color: '#90cdf4', fontWeight: 600, fontSize: '0.95rem', marginBottom: '0.75rem' }}>Computation options from the source</div>
+      <div style={{ display: 'flex', gap: '0.9rem', flexWrap: 'wrap', marginBottom: '0.9rem' }}>
+        {['Fixed Amount', 'Percentage of Wage', 'Python Code'].map(option => <label key={option} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', color: '#dbeafe' }}>
+          <input type="radio" name="calculationType" checked={form.calculationType === option} onChange={() => setForm(current => ({ ...current, calculationType: option }))} />
+          {option}
+        </label>)}
+      </div>
+      <div style={{ color: '#cbd5e1', fontSize: '0.92rem', marginBottom: '0.35rem' }}>Example expression: result = category["BASIC"]</div>
+      <textarea className="form-control" value={form.calculationType === 'Python Code' ? 'result = category["BASIC"]' : ''} onChange={() => {}} rows={3} style={{ background: 'rgba(15,23,42,0.35)', color: '#dbeafe' }} placeholder="Optional formula or script for complex payroll logic" />
+    </div>
+
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+      <button type="button" className="btn btn-quiet" onClick={() => { setSelectedRuleId(null); setIsCreating(false); resetForm(structures[0]?.id || ''); }}>Cancel</button>
+      {canManageSalaryRules && <button type="submit" className="btn btn-brand">Save changes</button>}
+    </div>
+  </form>;
+
+  return <div style={{ background: '#0b1220', minHeight: '100vh', color: '#e5e7eb', padding: '2.25rem' }}>
+    <div style={{ maxWidth: '1200px', margin: '0 auto', background: '#111827', border: '1px solid rgba(148,163,184,0.25)', borderRadius: '20px', padding: '1.3rem 1.4rem 1rem', boxShadow: '0 26px 65px rgba(15,23,42,0.45)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', marginBottom: '1.3rem' }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: '2.5rem', fontWeight: 300, fontFamily: 'Georgia, serif', letterSpacing: '0.04em' }}>Salary Rules</h1>
+          <p style={{ margin: '0.45rem 0 0', color: '#a0aec0', fontStyle: 'italic' }}>List view</p>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          {canManageSalaryRules && <button type="button" className="btn btn-brand" onClick={() => { setSelectedRuleId(null); setIsCreating(true); resetForm(structures[0]?.id || ''); }} style={{ background: '#7aa8ff', color: '#08111d', border: 'none' }}>NEW</button>}
+          <input className="form-control" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search salary rules..." style={{ minWidth: '260px', background: 'rgba(15,23,42,0.55)', color: '#e5e7eb', border: '1px solid rgba(148,163,184,0.25)' }} />
+          {structures.length ? <select className="form-select" value={form.structureId || structures[0].id} onChange={handleStructureChange} style={{ minWidth: '170px' }}>
+            {structures.map(structure => <option key={structure.id} value={structure.id}>{structure.name}</option>)}
+          </select> : null}
+        </div>
+      </div>
+
+      {!canManageSalaryRules && <div className="form-warning" style={{ marginBottom: '1rem', color: '#fbbf24' }}>Read-only access: HR Payroll User can view salary rules but cannot create or edit them.</div>}
+
+      {isCreating || selectedRule ? <div style={{ marginBottom: '1.4rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', marginBottom: '0.8rem' }}>
+          <h2 style={{ margin: 0, fontSize: '2.2rem', fontWeight: 300, fontFamily: 'Georgia, serif', letterSpacing: '0.04em', color: '#e5e7eb' }}>
+            {selectedRule ? `Salary Rule / ${selectedRule.name}` : 'Create Salary Rule'}
+          </h2>
+          {selectedRule && <button type="button" className="btn btn-quiet" onClick={() => setSelectedRuleId(null)}>Close</button>}
+        </div>
+        {!canManageSalaryRules && <div className="form-warning" style={{ marginBottom: '1rem', color: '#fbbf24' }}>This rule is view-only for your current role.</div>}
+        {renderEditor()}
+      </div> : <div className="table-responsive">
+        <table className="resource-table" style={{ background: 'rgba(15,23,42,0.25)' }}>
+          <thead>
+            <tr>
+              <th>Rule Name</th>
+              <th>Code</th>
+              <th>Category</th>
+              <th>Structure</th>
+              <th>Sequence</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredRules.length ? filteredRules.map(rule => <tr key={rule.id || `${rule.name}-${rule.sequence}`} onClick={() => openRule(rule)} style={{ cursor: 'pointer' }}>
+              <td>{rule.name}</td>
+              <td>{rule.code}</td>
+              <td>{rule.category}</td>
+              <td>{rule.structureName || rule.structureId || 'Regular Salary'}</td>
+              <td>{rule.sequence}</td>
+            </tr>) : <tr><td colSpan="5" className="empty-state">No salary rules match your search.</td></tr>}
+          </tbody>
+        </table>
+      </div>}
+
+      {!isCreating && !selectedRule && <div style={{ marginTop: '1.5rem', color: '#9aa4b2', fontStyle: 'italic' }}>Useful note: List view should expose each salary rule, and a selected rule opens in a form view for editing.</div>}
+    </div>
+  </div>;
+}
+
 function Dashboard() {
   const account = currentAccount();
   return account?.role === 'Employee' ? <EmployeeDashboard account={account} /> : <PayrollDashboard />;
@@ -338,7 +992,19 @@ function App() {
     window.dispatchEvent(new PopStateEvent('popstate'));
     return null;
   }
-  const content = info.type === 'dashboard' ? <Dashboard /> : info.type === 'settings' ? <Settings /> : info.type === 'reports' ? <ReportPage /> : <ResourcePage slug={info.slug} mode={info.mode} />;
+  const content = info.type === 'dashboard'
+    ? <Dashboard />
+    : info.type === 'settings'
+      ? <Settings />
+      : info.type === 'reports'
+        ? <ReportPage />
+        : info.slug === 'payruns'
+          ? <PayrunPage />
+          : info.slug === 'salary-structures'
+            ? <SalaryStructuresPage />
+            : info.slug === 'salary-rules'
+              ? <SalaryRulesPage />
+              : <ResourcePage slug={info.slug} mode={info.mode} />;
   return <Shell active={info.slug || ''}>{content}</Shell>;
 }
 

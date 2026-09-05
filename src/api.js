@@ -1,8 +1,21 @@
 const base = import.meta.env.VITE_API_URL || '/api';
 
+function currentAccount() {
+  try {
+    return JSON.parse(sessionStorage.getItem('peoplepayAccount') || 'null');
+  } catch {
+    return null;
+  }
+}
+
 async function request(path, options = {}) {
+  const account = currentAccount();
   const response = await fetch(`${base}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(account ? { 'X-User-Role': account.role || 'Employee', 'X-User-Email': account.email || '' } : {}),
+      ...(options.headers || {})
+    },
     ...options
   });
   if (!response.ok) {

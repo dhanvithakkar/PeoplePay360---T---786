@@ -18,6 +18,28 @@ db.run(`CREATE TABLE IF NOT EXISTS records (
 const collections = new Set(['users', 'employees', 'departments', 'schedules', 'contracts', 'attendance',
   'leaveRequests', 'leaveTypes', 'leaveAllocations', 'salaryStructures', 'salaryRules', 'payruns',
   'payslips', 'settings', 'myAttendance', 'onboarding']);
+const rolePermissions = {
+  Admin: {
+    read: new Set([...collections]),
+    write: new Set([...collections])
+  },
+  'HR Manager': {
+    read: new Set(['employees', 'departments', 'schedules', 'contracts', 'attendance', 'leaveRequests', 'leaveTypes', 'leaveAllocations', 'myAttendance', 'onboarding']),
+    write: new Set(['employees', 'departments', 'schedules', 'contracts', 'attendance', 'leaveRequests', 'leaveTypes', 'leaveAllocations', 'myAttendance', 'onboarding'])
+  },
+  'HR Payroll User': {
+    read: new Set(['employees', 'departments', 'schedules', 'contracts', 'attendance', 'leaveRequests', 'leaveTypes', 'leaveAllocations', 'myAttendance', 'onboarding', 'salaryStructures', 'salaryRules', 'payruns', 'payslips']),
+    write: new Set(['employees', 'departments', 'schedules', 'contracts', 'attendance', 'leaveRequests', 'leaveTypes', 'leaveAllocations', 'myAttendance', 'onboarding', 'payruns', 'payslips'])
+  },
+  'HR Payroll Manager': {
+    read: new Set([...collections]),
+    write: new Set([...collections])
+  },
+  Employee: {
+    read: new Set(['employees', 'departments', 'schedules', 'contracts', 'attendance', 'leaveRequests', 'leaveTypes', 'leaveAllocations', 'myAttendance', 'onboarding', 'salaryStructures', 'salaryRules', 'payruns', 'payslips']),
+    write: new Set(['myAttendance', 'leaveRequests'])
+  }
+};
 
 function ensureSqlColumn(tableName, columnName, definition) {
   const columns = query(`PRAGMA table_info(${tableName})`);
@@ -27,6 +49,17 @@ function ensureSqlColumn(tableName, columnName, definition) {
 }
 const app = express();
 app.use(express.json({ limit: '1mb' }));
+app.use('/api', (req, res, next) => {
+  if (req.path === '/health' || req.path.startsWith('/auth/')) return next();
+  const segments = req.path.split('/').filter(Boolean);
+  const collection = segments[0];
+  if (!collection || !valid(collection)) return next();
+  const role = getRequestRole(req);
+  if (!canAccessCollection(role, collection, req.method)) {
+    return res.status(403).json({ error: `Access denied for role "${role}" on collection "${collection}".` });
+  }
+  next();
+});
 
 const createSqlTables = `
   CREATE TABLE IF NOT EXISTS departments (
@@ -147,6 +180,18 @@ const normaliseAccountEmail = value => String(value || '').trim().toLowerCase();
 const normaliseAccountRole = user => {
   const role = user?.role || user?.accountType || 'Employee';
   return role === 'HR Payroll User' || role === 'HR Payroll Manager' || role === 'HR Manager' || role === 'Admin' || role === 'Employee' ? role : 'Employee';
+};
+const getRequestRole = req => {
+  const headerRole = String(req.headers['x-user-role'] || req.headers['X-User-Role'] || '').trim();
+  const bodyRole = req.body && typeof req.body === 'object' ? req.body.role || req.body.accountType : '';
+  const fallbackRole = normaliseAccountRole({ role: headerRole || bodyRole || 'Employee' });
+  return fallbackRole || 'Employee';
+};
+const canAccessCollection = (role, collection, method) => {
+  const permissions = rolePermissions[role] || rolePermissions.Employee;
+  if (!permissions) return false;
+  const target = method === 'GET' ? permissions.read : permissions.write;
+  return target.has(collection);
 };
 const mergeUserAccounts = () => {
   const users = readRecords('users').map(user => ({
@@ -632,6 +677,33 @@ function seedReferenceData() {
   for (const item of leaveTypeSeed) {
     writeRecord('leaveTypes', item);
     upsertLeaveTypeRecord(item);
+  }
+
+  const salaryStructureSeed = [
+    { id: 'SAL-REG', name: 'Regular Salary', description: 'Standard monthly compensation structure', currency: 'INR', frequency: 'Monthly', status: 'Active' },
+    { id: 'SAL-OT', name: 'Overtime Salary', description: 'Additional overtime allowance', currency: 'INR', frequency: 'Monthly', status: 'Active' },
+    { id: 'SAL-EXEC', name: 'Executive CTC', description: 'Executive monthly salary structure', currency: 'INR', frequency: 'Monthly', status: 'Active' }
+  ];
+  for (const item of salaryStructureSeed) {
+    writeRecord('salaryStructures', item);
+  }
+
+  const salaryRuleSeed = [
+    { id: 'SR-001', structureId: 'SAL-REG', structureName: 'Regular Salary', name: 'Basic Salary', code: 'BASIC', category: 'Basic', calculationType: 'Fixed amount', value: 30000, sequence: 1, status: 'Active' },
+    { id: 'SR-002', structureId: 'SAL-REG', structureName: 'Regular Salary', name: 'House Rent Allowance', code: 'HRA', category: 'Allowance', calculationType: 'Percentage', value: 20, sequence: 10, status: 'Active' },
+    { id: 'SR-003', structureId: 'SAL-REG', structureName: 'Regular Salary', name: 'Standard Allowance', code: 'STA', category: 'Allowance', calculationType: 'Fixed amount', value: 5000, sequence: 20, status: 'Active' },
+    { id: 'SR-004', structureId: 'SAL-REG', structureName: 'Regular Salary', name: 'Performance Bonus', code: 'BONUS', category: 'Allowance', calculationType: 'Percentage', value: 10, sequence: 30, status: 'Active' },
+    { id: 'SR-005', structureId: 'SAL-REG', structureName: 'Regular Salary', name: 'Gross Salary', code: 'GROSS', category: 'Gross', calculationType: 'Formula', value: 0, sequence: 60, status: 'Active' },
+    { id: 'SR-006', structureId: 'SAL-REG', structureName: 'Regular Salary', name: 'Provident Fund', code: 'PF', category: 'Deduction', calculationType: 'Percentage', value: 12, sequence: 80, status: 'Active' },
+    { id: 'SR-007', structureId: 'SAL-REG', structureName: 'Regular Salary', name: 'Net Salary', code: 'NET', category: 'Net', calculationType: 'Formula', value: 0, sequence: 110, status: 'Active' },
+    { id: 'SR-008', structureId: 'SAL-EXEC', structureName: 'Executive CTC', name: 'Base Salary', code: 'BASE', category: 'Basic', calculationType: 'Fixed amount', value: 60000, sequence: 1, status: 'Active' },
+    { id: 'SR-009', structureId: 'SAL-EXEC', structureName: 'Executive CTC', name: 'Executive Allowance', code: 'EA', category: 'Allowance', calculationType: 'Fixed amount', value: 15000, sequence: 20, status: 'Active' },
+    { id: 'SR-010', structureId: 'SAL-EXEC', structureName: 'Executive CTC', name: 'Gross Salary', code: 'GROSS', category: 'Gross', calculationType: 'Formula', value: 0, sequence: 60, status: 'Active' },
+    { id: 'SR-011', structureId: 'SAL-OT', structureName: 'Overtime Salary', name: 'Overtime Hours', code: 'OT', category: 'Allowance', calculationType: 'Fixed amount', value: 250, sequence: 10, status: 'Active' },
+    { id: 'SR-012', structureId: 'SAL-OT', structureName: 'Overtime Salary', name: 'Net Overtime', code: 'OTNET', category: 'Net', calculationType: 'Formula', value: 0, sequence: 30, status: 'Active' }
+  ];
+  for (const item of salaryRuleSeed) {
+    writeRecord('salaryRules', item);
   }
 
   const mockEmployees = buildSeedEmployees();
