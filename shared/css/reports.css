@@ -1,0 +1,22 @@
+.report-tabs { display: flex; gap: 4px; margin-bottom: 18px; padding: 5px; overflow-x: auto; border: 1px solid var(--border); border-radius: 7px; background: var(--card-bg); }
+.report-tab { flex: 0 0 auto; border: 0; border-radius: 5px; background: transparent; color: var(--text-muted); padding: 9px 15px; font-size: 11px; font-weight: 800; }
+.report-tab:hover { color: var(--text); }
+.report-tab.active { background: var(--brand); color: #fff; }
+.report-filter-bar { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 18px; }
+.report-filter-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.report-filter { min-width: 145px; min-height: 42px; }
+.report-kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
+.report-kpi { min-height: 125px; padding: 18px; }
+.report-kpi .metric-card-value { font-size: 22px; }
+.report-chart-grid { display: grid; grid-template-columns: 1.25fr .75fr; gap: 18px; margin-bottom: 18px; }
+.report-chart-panel { min-height: 350px; }
+.report-chart { position: relative; height: 270px; }
+.report-table { width: 100%; border-collapse: collapse; }
+.report-table th { padding: 11px 16px; background: var(--input-bg); color: var(--text-muted); font-family: 'DM Mono', monospace; font-size: 9px; font-weight: 500; text-align: left; text-transform: uppercase; }
+.report-table td { padding: 13px 16px; border-top: 1px solid rgba(43,49,58,.72); color: var(--text-secondary); font-size: 10px; }
+.report-empty { padding: 40px; color: var(--text-muted); text-align: center; }
+.report-empty i { display: block; margin-bottom: 8px; color: var(--brand-hover); font-size: 22px; }
+.chart-empty { display: grid; height: 100%; min-height: 240px; place-content: center; justify-items: center; gap: 8px; color: var(--text-muted); font-size: 11px; text-align: center; }
+.chart-empty i { color: var(--brand-hover); font-size: 22px; }
+@media (max-width: 1000px) { .report-kpi-grid { grid-template-columns: repeat(2, 1fr); } .report-chart-grid { grid-template-columns: 1fr; } }
+@media (max-width: 700px) { .report-filter-bar { align-items: stretch; flex-direction: column; } .report-kpi-grid { grid-template-columns: 1fr; } }

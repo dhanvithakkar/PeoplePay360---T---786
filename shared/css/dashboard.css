@@ -1,0 +1,130 @@
+.foundation-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 18px; }
+.metric-card { position: relative; min-height: 176px; overflow: hidden; border-radius: 8px; padding: 22px; }
+.metric-card::after { position: absolute; right: -36px; bottom: -54px; width: 140px; height: 140px; border: 1px solid rgba(113,75,103,.28); border-radius: 50%; content: ''; }
+.metric-card--accent { background: linear-gradient(135deg, rgba(113,75,103,.35), var(--card-bg) 58%); }
+.metric-card-icon { display: grid; width: 34px; height: 34px; place-items: center; margin-bottom: 22px; border: 1px solid rgba(194,146,178,.3); border-radius: 7px; background: rgba(113,75,103,.18); color: #d5a9c5; }
+.metric-card-icon--teal { border-color: rgba(1,126,132,.3); background: rgba(1,126,132,.13); color: #77d9d5; }
+.metric-card-icon--indigo { border-color: rgba(99,102,241,.3); background: rgba(99,102,241,.13); color: #a7a8f8; }
+.metric-card-label { color: var(--text-secondary); font-size: 11px; font-weight: 700; }
+.metric-card-value { margin-top: 5px; color: var(--text); font-size: 27px; font-weight: 800; letter-spacing: -.04em; }
+.metric-card-value--small { font-size: 20px; }
+.metric-card-note { margin-top: 10px; color: var(--text-muted); font-size: 10px; }
+.foundation-panel { min-height: 280px; }
+.component-list { display: grid; gap: 0; border-top: 1px solid var(--border); }
+.component-list-item { display: grid; grid-template-columns: 48px 1fr auto; align-items: center; gap: 14px; min-height: 54px; border-bottom: 1px solid rgba(43,49,58,.75); color: var(--text-secondary); font-size: 12px; }
+.component-index { color: var(--brand-hover); font-family: 'DM Mono', monospace; font-size: 10px; }
+.component-state { color: #79c99a; font-family: 'DM Mono', monospace; font-size: 10px; text-transform: uppercase; }
+.dashboard-empty, .chart-empty { display: grid; min-height: 100px; place-content: center; justify-items: center; gap: 8px; padding: 20px; color: var(--text-muted); font-size: 11px; text-align: center; }
+.dashboard-empty i, .chart-empty i { color: var(--brand-hover); font-size: 22px; }
+.chart-empty { height: 100%; min-height: 220px; }
+
+.dashboard-grid { display: grid; gap: 18px; }
+.dashboard-kpis { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 18px; }
+.dashboard-kpi { min-width: 0; min-height: 142px; padding: 18px; }
+.dashboard-kpi .metric-card-icon { width: 30px; height: 30px; margin-bottom: 16px; font-size: 13px; }
+.dashboard-kpi .metric-card-value { font-size: 22px; }
+.dashboard-kpi .metric-card-note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dashboard-kpi-trend { color: #7dd3a0; font-size: 10px; font-weight: 800; }
+.dashboard-kpi-trend--warning { color: #f8c568; }
+.dashboard-chart-grid { display: grid; grid-template-columns: 1.45fr 1fr 1fr; gap: 18px; }
+.dashboard-chart-panel { min-width: 0; }
+.dashboard-chart-panel--large { min-height: 356px; }
+.dashboard-chart-panel--small { min-height: 356px; }
+.chart-wrap { position: relative; height: 265px; }
+.chart-wrap--donut { height: 270px; }
+.chart-meta { margin-top: 4px; color: var(--text-muted); font-size: 10px; }
+.dashboard-bottom-grid { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 18px; }
+.dashboard-bottom-grid .content-panel { min-width: 0; }
+.table-responsive { overflow-x: auto; }
+.dashboard-table { width: 100%; min-width: 470px; border-collapse: collapse; }
+.dashboard-table th { padding: 0 10px 12px; border-bottom: 1px solid var(--border); color: var(--text-muted); font-family: 'DM Mono', monospace; font-size: 9px; font-weight: 500; letter-spacing: .06em; text-align: left; text-transform: uppercase; }
+.dashboard-table td { padding: 13px 10px; border-bottom: 1px solid rgba(43,49,58,.72); color: var(--text-secondary); font-size: 11px; vertical-align: middle; }
+.dashboard-table tr:last-child td { border-bottom: 0; }
+.table-person { display: flex; align-items: center; gap: 9px; min-width: 160px; }
+.table-person strong, .table-person small, .table-secondary { display: block; }
+.table-person strong { color: var(--text); font-size: 11px; }
+.table-person small, .table-secondary { margin-top: 3px; color: var(--text-muted); font-size: 9px; }
+.avatar--purple { background: rgba(113,75,103,.42); color: #e1bdd5; }
+.avatar--teal { background: rgba(1,126,132,.34); color: #a4e5e2; }
+.avatar--indigo { background: rgba(99,102,241,.32); color: #c2c3ff; }
+.avatar--orange { background: rgba(245,158,11,.28); color: #f9d58c; }
+.status-badge { display: inline-flex; align-items: center; border-radius: 4px; padding: 5px 7px; font-size: 9px; font-weight: 800; }
+.status-badge--pending { background: rgba(245,158,11,.13); color: #f8c568; }
+.alert-list, .contract-list, .missing-list { display: grid; }
+.alert-row, .contract-row, .missing-row { display: flex; align-items: center; gap: 11px; min-height: 64px; border-bottom: 1px solid rgba(43,49,58,.72); }
+.alert-row:last-child, .contract-row:last-child, .missing-row:last-child { border-bottom: 0; }
+.alert-icon, .missing-icon { display: grid; width: 30px; height: 30px; flex: 0 0 30px; place-items: center; border-radius: 6px; font-size: 13px; }
+.alert-icon--warning { background: rgba(245,158,11,.12); color: var(--warning); }
+.alert-icon--success { background: rgba(34,197,94,.12); color: var(--success); }
+.alert-icon--info { background: rgba(99,102,241,.12); color: #a7a8f8; }
+.alert-copy, .contract-person, .contract-expiry { min-width: 0; flex: 1; }
+.alert-copy strong, .alert-copy small, .contract-person strong, .contract-person small, .contract-expiry strong, .contract-expiry small { display: block; }
+.alert-copy strong, .contract-person strong { overflow: hidden; color: var(--text); font-size: 11px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.alert-copy small, .contract-person small, .contract-expiry small { margin-top: 3px; color: var(--text-muted); font-size: 9px; }
+.alert-arrow { color: var(--text-muted); font-size: 11px; }
+.contract-expiry { flex: 0 0 92px; text-align: right; }
+.contract-expiry strong { color: var(--text-secondary); font-size: 10px; font-weight: 700; }
+.missing-icon { background: rgba(113,75,103,.14); color: #c292b2; }
+.missing-row span:nth-child(2) { flex: 1; color: var(--text-secondary); font-size: 10px; }
+.missing-row strong { color: var(--text); font-size: 16px; }
+.dashboard-section-action { color: #c292b2; font-size: 10px; font-weight: 800; }
+.dashboard-section-action:hover { color: #e0b9d3; }
+
+@media (max-width: 1200px) { .dashboard-kpis { grid-template-columns: repeat(3, 1fr); } .dashboard-chart-grid { grid-template-columns: 1.4fr 1fr; } .dashboard-chart-panel:last-child { grid-column: 1 / -1; } .dashboard-bottom-grid { grid-template-columns: repeat(2, 1fr); } .dashboard-bottom-grid .content-panel:first-child { grid-column: 1 / -1; } }
+@media (max-width: 700px) { .dashboard-kpis, .dashboard-chart-grid, .dashboard-bottom-grid { grid-template-columns: 1fr; } .dashboard-chart-panel:last-child, .dashboard-bottom-grid .content-panel:first-child { grid-column: auto; } .dashboard-kpi { min-height: 128px; } .dashboard-table { min-width: 500px; } }
+
+.payroll-dashboard-tabs { display: flex; align-items: center; gap: 22px; min-height: 36px; margin: -10px 0 24px; border-bottom: 1px solid var(--border); color: var(--text-muted); font-family: 'DM Mono', monospace; font-size: 10px; }
+.payroll-dashboard-tabs a { position: relative; padding: 0 0 11px; }
+.payroll-dashboard-tabs a:hover, .payroll-dashboard-tabs a.is-active { color: var(--text); }
+.payroll-dashboard-tabs a.is-active::after { position: absolute; right: 0; bottom: -1px; left: 0; height: 2px; background: #77b9e8; content: ''; }
+.payroll-dashboard-header { margin-bottom: 14px; }
+.payroll-dashboard-header h1 { font-size: clamp(1.8rem, 3vw, 2.8rem); }
+.payroll-dashboard-filters { display: flex; align-items: flex-end; gap: 12px; margin-bottom: 16px; }
+.payroll-dashboard-filters label { display: grid; gap: 6px; color: var(--text-muted); font-family: 'DM Mono', monospace; font-size: 9px; text-transform: uppercase; }
+.payroll-dashboard-filters .form-select { width: 174px; min-height: 36px; padding: 7px 30px 7px 10px; font-size: 11px; }
+.payroll-dashboard-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+.payroll-dashboard-kpis .dashboard-kpi { min-height: 112px; padding: 15px; }
+.payroll-dashboard-kpis .metric-card-label { font-size: 10px; }
+.payroll-dashboard-kpis .metric-card-value { margin-top: 10px; font-size: 21px; }
+.payroll-dashboard-kpis .metric-card-note { margin-top: 7px; font-size: 9px; white-space: nowrap; }
+.payroll-dashboard-card { min-width: 0; min-height: 0; border-radius: 7px; padding: 15px; box-shadow: 0 10px 24px rgba(0,0,0,.1); }
+.payroll-dashboard-card .panel-heading { margin-bottom: 11px; }
+.payroll-dashboard-card .panel-heading h2 { margin: 0; font-size: 14px; letter-spacing: -.025em; }
+.payroll-dashboard-card .panel-heading p { margin: 4px 0 0; color: var(--text-muted); font-size: 9px; }
+.payroll-dashboard-analytics { display: grid; grid-template-columns: 35fr 28fr 37fr; gap: 10px; margin-bottom: 10px; }
+.payroll-chart-wrap { position: relative; height: 205px; }
+.payroll-chart-empty { min-height: 205px; }
+.payroll-dashboard-operational { display: grid; grid-template-columns: 25fr 28fr 25fr 22fr; gap: 10px; }
+.payroll-dashboard-operational .payroll-dashboard-card { min-height: 208px; }
+.payroll-status-bar { display: flex; height: 18px; overflow: hidden; margin: 12px 0 10px; border: 1px solid var(--border); border-radius: 3px; background: var(--input-bg); }
+.payroll-status-segment { display: block; min-width: 0; border-right: 1px solid rgba(17,19,21,.35); }
+.payroll-status-segment.is-paid, .payroll-status-legend .is-paid { background: #8fd7a6; }
+.payroll-status-segment.is-due, .payroll-status-legend .is-due { background: #77b9e8; }
+.payroll-status-segment.is-pending, .payroll-status-legend .is-pending { background: #f8c568; }
+.payroll-status-segment.is-warning, .payroll-status-legend .is-warning { background: #ef8d8d; }
+.payroll-status-legend { display: flex; flex-wrap: wrap; gap: 10px; color: var(--text-secondary); font-size: 9px; }
+.payroll-status-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.payroll-status-legend i { width: 8px; height: 8px; border-radius: 2px; }
+.payroll-alerts { display: grid; gap: 8px; margin-top: 16px; }
+.payroll-alert-row { display: flex; align-items: center; gap: 7px; color: var(--text-secondary); font-size: 10px; }
+.payroll-alert-row i { color: var(--warning); }
+.payroll-empty-copy { padding: 18px 4px; color: var(--text-muted); font-size: 10px; text-align: center; }
+.attendance-summary-bars { display: grid; gap: 11px; margin-top: 15px; }
+.attendance-stat-row { display: grid; grid-template-columns: 48px 1fr 20px; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 10px; }
+.attendance-stat-row > div { height: 9px; overflow: hidden; border-radius: 2px; background: var(--input-bg); }
+.attendance-stat-row i { display: block; height: 100%; border-radius: 2px; background: #77b9e8; }
+.attendance-stat-row:nth-child(2) i { background: #f8c568; }
+.attendance-stat-row:nth-child(3) i { background: #ef8d8d; }
+.attendance-stat-row:nth-child(4) i { background: #8ccac8; }
+.attendance-stat-row strong { color: var(--text); font-size: 10px; text-align: right; }
+.payroll-mini-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 20px; color: var(--text-muted); font-size: 9px; }
+.payroll-mini-metrics strong { display: block; margin-top: 4px; color: var(--text); font-size: 15px; }
+.payroll-dashboard-table { width: 100%; border-collapse: collapse; font-size: 9px; }
+.payroll-dashboard-table th { padding: 0 4px 8px; border-bottom: 1px solid var(--border); color: var(--text-muted); font-family: 'DM Mono', monospace; font-size: 8px; font-weight: 500; text-align: left; }
+.payroll-dashboard-table td { padding: 9px 4px; border-bottom: 1px solid rgba(43,49,58,.7); color: var(--text-secondary); white-space: nowrap; }
+.payroll-dashboard-table tr:last-child td { border-bottom: 0; }
+.payroll-model-list { display: grid; gap: 11px; margin: 18px 0 0; padding-left: 16px; color: var(--text-secondary); font-size: 10px; line-height: 1.35; }
+.payroll-model-list li::marker { color: #77b9e8; }
+@media (max-width: 1200px) { .payroll-dashboard-kpis { grid-template-columns: repeat(3, 1fr); } .payroll-dashboard-analytics { grid-template-columns: 1fr 1fr; } .payroll-status-card { grid-column: 1 / -1; } .payroll-dashboard-operational { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 700px) { .payroll-dashboard-tabs { gap: 15px; overflow-x: auto; } .payroll-dashboard-filters { align-items: stretch; flex-direction: column; } .payroll-dashboard-filters .form-select { width: 100%; } .payroll-dashboard-kpis, .payroll-dashboard-analytics, .payroll-dashboard-operational { grid-template-columns: 1fr; } .payroll-status-card { grid-column: auto; } .payroll-chart-wrap { height: 220px; } }
+@media (min-width: 701px) { body .payroll-dashboard-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); } body .payroll-dashboard-analytics { grid-template-columns: 35fr 28fr 37fr; } body .payroll-dashboard-operational { grid-template-columns: 25fr 28fr 25fr 22fr; } body .payroll-status-card { grid-column: auto; } }

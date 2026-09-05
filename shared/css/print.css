@@ -1,0 +1,1 @@
+@media print { .app-sidebar, .app-topbar, .payslip-side, .page-header-actions, .toast-region { display: none !important; } .app-main { margin: 0 !important; padding: 0 !important; } .content-wrap { width: 100%; padding: 0; } .payslip-document { border: 0; } body { background: #fff; color: #111; } }

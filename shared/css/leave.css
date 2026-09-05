@@ -1,0 +1,61 @@
+.leave-type-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 18px; }
+.leave-type-card { padding: 20px; border: 1px solid var(--border); border-radius: 8px; background: var(--card-bg); }
+.leave-type-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.leave-type-icon { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 7px; background: rgba(113,75,103,.15); color: #c292b2; }
+.leave-type-card:nth-child(2) .leave-type-icon { background: rgba(1,126,132,.14); color: #8dd8d4; }
+.leave-type-card:nth-child(3) .leave-type-icon { background: rgba(245,158,11,.12); color: #f8c568; }
+.leave-type-card h2 { margin: 18px 0 6px; font-size: 15px; }
+.leave-type-card p { min-height: 37px; margin: 0; color: var(--text-secondary); font-size: 10px; line-height: 1.6; }
+.leave-type-meta { display: flex; justify-content: space-between; margin-top: 18px; padding-top: 13px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 10px; }
+.leave-type-meta strong { color: var(--text); }
+.leave-table-panel { padding: 0; overflow: hidden; }
+.leave-table-wrap { overflow-x: auto; }
+.leave-table { width: 100%; min-width: 840px; border-collapse: collapse; }
+.leave-table th { padding: 12px 20px; background: var(--input-bg); color: var(--text-muted); font-family: 'DM Mono', monospace; font-size: 9px; font-weight: 500; letter-spacing: .06em; text-align: left; text-transform: uppercase; }
+.leave-table td { padding: 14px 20px; border-top: 1px solid rgba(43,49,58,.72); color: var(--text-secondary); font-size: 11px; vertical-align: middle; }
+.leave-table tr:hover { background: rgba(113,75,103,.06); }
+.leave-person { display: flex; align-items: center; gap: 9px; min-width: 170px; }
+.leave-person strong, .leave-person small { display: block; }
+.leave-person strong { color: var(--text); font-size: 11px; }
+.leave-person small { margin-top: 3px; color: var(--text-muted); font-size: 9px; }
+.leave-status { display: inline-flex; align-items: center; border-radius: 4px; padding: 5px 7px; font-size: 9px; font-weight: 800; }
+.leave-status--pending { background: rgba(245,158,11,.12); color: #f8c568; }
+.leave-status--approved { background: rgba(34,197,94,.11); color: #79d69b; }
+.leave-status--rejected { background: rgba(239,68,68,.11); color: #fca5a5; }
+.leave-tab-bar { display: flex; gap: 4px; margin-bottom: 18px; padding: 5px; border: 1px solid var(--border); border-radius: 7px; background: var(--card-bg); }
+.leave-tab { border: 0; border-radius: 5px; background: transparent; color: var(--text-muted); padding: 9px 15px; font-size: 11px; font-weight: 800; }
+.leave-tab:hover { color: var(--text); }
+.leave-tab.active { background: var(--brand); color: #fff; }
+.leave-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.leave-toolbar-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.leave-search { display: flex; width: min(300px, 35vw); align-items: center; gap: 8px; padding: 0 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--input-bg); }
+.leave-search i { color: var(--text-muted); }
+.leave-search input { width: 100%; min-height: 42px; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 12px; }
+.leave-empty { padding: 52px 20px; color: var(--text-muted); text-align: center; }
+.leave-empty i { display: block; margin-bottom: 10px; color: var(--brand-hover); font-size: 24px; }
+.leave-detail-layout { display: grid; grid-template-columns: 1.25fr .75fr; gap: 18px; align-items: start; }
+.leave-detail-card { padding: 24px; border: 1px solid var(--border); border-radius: 8px; background: var(--card-bg); }
+.leave-detail-card h2 { margin: 0 0 20px; font-size: 15px; }
+.leave-detail-row { display: flex; justify-content: space-between; gap: 16px; padding: 13px 0; border-bottom: 1px solid rgba(43,49,58,.72); }
+.leave-detail-row:last-child { border-bottom: 0; }
+.leave-detail-row span { color: var(--text-muted); font-size: 10px; }
+.leave-detail-row strong { max-width: 65%; color: var(--text-secondary); font-size: 11px; text-align: right; }
+.leave-detail-side { position: sticky; top: 100px; }
+.leave-detail-actions { display: grid; gap: 9px; margin-top: 20px; }
+.leave-detail-actions .btn { width: 100%; }
+.leave-form-layout { display: grid; grid-template-columns: 1.4fr .75fr; gap: 18px; align-items: start; }
+.leave-form-panel { padding: 24px; }
+.leave-form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+.leave-form-grid .span-2 { grid-column: span 2; }
+.leave-duration { display: flex; align-items: center; justify-content: space-between; margin-top: 15px; padding: 14px; border: 1px solid rgba(1,126,132,.35); border-radius: 6px; background: rgba(1,126,132,.08); color: var(--text-secondary); font-size: 11px; }
+.leave-duration strong { color: #a4e5e2; font-size: 17px; }
+.leave-form-side { position: sticky; top: 100px; }
+.leave-form-side h2 { margin: 0 0 14px; font-size: 14px; }
+.leave-form-side p { color: var(--text-secondary); font-size: 11px; line-height: 1.7; }
+.allocation-table { width: 100%; border-collapse: collapse; }
+.allocation-table th { padding: 12px 16px; background: var(--input-bg); color: var(--text-muted); font-family: 'DM Mono', monospace; font-size: 9px; font-weight: 500; text-align: left; text-transform: uppercase; }
+.allocation-table td { padding: 14px 16px; border-top: 1px solid rgba(43,49,58,.72); color: var(--text-secondary); font-size: 11px; }
+.allocation-progress { width: 100px; height: 5px; overflow: hidden; border-radius: 9px; background: var(--border); }
+.allocation-progress span { display: block; height: 100%; border-radius: inherit; background: var(--teal); }
+@media (max-width: 1000px) { .leave-type-grid { grid-template-columns: repeat(2, 1fr); } .leave-detail-layout, .leave-form-layout { grid-template-columns: 1fr; } .leave-detail-side, .leave-form-side { position: static; } }
+@media (max-width: 700px) { .leave-type-grid { grid-template-columns: 1fr; } .leave-toolbar { align-items: stretch; flex-direction: column; } .leave-search { width: 100%; } .leave-tab-bar { overflow-x: auto; } .leave-tab { flex: 0 0 auto; } .leave-form-grid { grid-template-columns: 1fr; } .leave-form-grid .span-2 { grid-column: auto; } }

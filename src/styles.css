@@ -1,0 +1,78 @@
+/* React surfaces use the original PeoplePay360 visual tokens and components. */
+.app-root { min-height: 100vh; }
+.app-root.sidebar-collapsed .app-sidebar { width: var(--sidebar-collapsed-width); }
+.app-root.sidebar-collapsed .app-sidebar .brand-copy,
+.app-root.sidebar-collapsed .app-sidebar .app-nav-link span,
+.app-root.sidebar-collapsed .app-sidebar .nav-section-label,
+.app-root.sidebar-collapsed .app-sidebar .sidebar-user-copy,
+.app-root.sidebar-collapsed .app-sidebar .sidebar-logout span { display: none; }
+.app-root.sidebar-collapsed .app-sidebar .sidebar-brand { justify-content: center; padding: 0; }
+.app-root.sidebar-collapsed .app-sidebar .app-nav-link { justify-content: center; }
+.app-root.sidebar-collapsed .app-sidebar .sidebar-logout { justify-content: center; }
+.app-root.sidebar-collapsed .app-main { margin-left: var(--sidebar-collapsed-width); }
+.app-root.sidebar-collapsed .app-topbar { left: var(--sidebar-collapsed-width); }
+.metric-card { padding: 22px; border-radius: 8px; }
+.metric-card-label { color: var(--text-secondary); font-size: 11px; font-weight: 700; }
+.metric-card-value { margin: 13px 0 7px; color: var(--text); font-size: 26px; font-weight: 800; letter-spacing: -.04em; }
+.metric-card-note { color: var(--text-muted); font-size: 11px; }
+.dashboard-kpi-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; margin-bottom: 22px; }
+.dashboard-panels { display: grid; grid-template-columns: 1.2fr .8fr; gap: 18px; }
+.report-summary-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; }
+.overview-list { display: grid; gap: 8px; }
+.overview-item { display: flex; align-items: center; gap: 12px; padding: 15px; border: 1px solid var(--border); border-radius: 6px; color: var(--text-secondary); }
+.overview-item:hover { border-color: var(--brand); color: var(--text); }
+.overview-item strong { margin-left: auto; color: var(--text); font-size: 18px; }
+.overview-item i { color: var(--teal); }
+.resource-form { max-width: 1100px; }
+.resource-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 20px; align-items: start; }
+.form-field { min-width: 0; display: grid; gap: 8px; padding: 12px 14px; border: 1px solid rgba(43,49,58,.8); border-radius: 12px; background: rgba(19,23,29,.62); }
+.form-field textarea { resize: vertical; }
+.form-field .form-label { margin-bottom: 0; }
+.form-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 25px; padding-top: 20px; border-top: 1px solid var(--border); }
+.form-error { margin: 16px 0 0; color: #fca5a5; font-size: 12px; }
+.form-success { margin: 16px 0 0; color: #86efac; font-size: 12px; }
+.resource-table { width: 100%; border-collapse: collapse; }
+.resource-table th { padding: 11px 12px; border-bottom: 1px solid var(--border); color: var(--text-muted); font-family: 'DM Mono', monospace; font-size: 10px; font-weight: 500; letter-spacing: .08em; text-align: left; text-transform: uppercase; }
+.resource-table td { padding: 15px 12px; border-bottom: 1px solid rgba(43,49,58,.65); color: var(--text-secondary); font-size: 12px; }
+.resource-table tbody tr:hover { background: rgba(113,75,103,.08); }
+.table-actions { display: flex; gap: 6px; white-space: nowrap; }
+.btn-sm { min-height: 30px; padding: 6px 9px; font-size: 10px; }
+.btn-danger { border: 1px solid rgba(239,68,68,.35); background: transparent; color: #fca5a5; }
+.btn-danger:hover { background: rgba(239,68,68,.1); }
+.empty-state { padding: 28px 12px; color: var(--text-muted); text-align: center; }
+.settings-form { max-width: 940px; }
+.settings-checks { display: grid; gap: 13px; margin-top: 22px; color: var(--text-secondary); font-size: 12px; }
+.settings-checks input { margin-right: 9px; accent-color: var(--brand); }
+.auth-page { display: grid; min-height: 100vh; place-items: center; padding: 30px; background: var(--app-bg); }
+.auth-panel { width: min(100%, 510px); padding: 42px; border: 1px solid var(--border); border-radius: 9px; background: var(--card-bg); box-shadow: 0 25px 60px rgba(0,0,0,.24); }
+.auth-brand { display: inline-flex; align-items: center; gap: 11px; margin-bottom: 50px; font-weight: 800; }
+.auth-brand .brand-mark { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid #9b7690; border-radius: 9px; background: var(--brand); }
+.auth-panel h1 { margin: 10px 0 10px; font-size: 34px; letter-spacing: -.045em; }
+.auth-form { display: grid; gap: 17px; margin-top: 28px; }
+.auth-form .form-field { display: grid; gap: 1px; }
+.auth-submit { width: 100%; margin-top: 5px; }
+.auth-switch { margin: 24px 0 0; color: var(--text-muted); font-size: 12px; text-align: center; }
+.auth-switch a { color: #c292b2; font-weight: 700; }
+.demo-credentials { display: grid; gap: 8px; margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border); }
+.demo-credentials strong { color: var(--text); font-size: 12px; }
+.demo-credentials > span { color: var(--text-muted); font-size: 11px; }
+.demo-credentials button { display: grid; gap: 3px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--text-secondary); text-align: left; cursor: pointer; }
+.demo-credentials button:hover { border-color: var(--brand-hover); color: var(--text); }
+.demo-credentials b { font-size: 11px; color: var(--text); }
+.demo-credentials small { font-family: 'DM Mono', monospace; font-size: 9px; }
+@media (max-width: 1100px) {
+  .dashboard-kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .app-sidebar { transform: translateX(-100%); }
+  .app-main { margin-left: 0; }
+  .app-topbar { left: 0; padding: 0 16px; }
+  .topbar-search { display: none; }
+  .content-wrap { width: min(100% - 28px, 1440px); padding-top: 25px; }
+  .page-header { align-items: flex-start; flex-direction: column; }
+  .dashboard-kpi-grid, .dashboard-panels, .resource-form-grid, .report-summary-grid { grid-template-columns: 1fr; }
+  .resource-form-grid .form-field { padding: 10px 12px; }
+  .content-panel { padding: 18px 14px; }
+  .page-header h1 { font-size: clamp(1.9rem, 9vw, 2.6rem); }
+  .auth-panel { padding: 28px 22px; }
+}

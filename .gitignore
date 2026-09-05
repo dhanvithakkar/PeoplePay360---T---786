@@ -1,0 +1,10 @@
+.vscode/
+*.log
+node_modules/
+dist/
+server/data/*.sqlite-shm
+server/data/*.sqlite-wal
+Thumbs.db
+.DS_Store
+!server/data/
+!server/data/peoplepay360.sqlite
