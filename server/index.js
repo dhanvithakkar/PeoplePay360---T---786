@@ -143,28 +143,41 @@ const publicUser = user => {
   const { password, ...safeUser } = user;
   return safeUser;
 };
+const normaliseAccountEmail = value => String(value || '').trim().toLowerCase();
+const normaliseAccountRole = user => {
+  const role = user?.role || user?.accountType || 'Employee';
+  return role === 'HR Payroll User' || role === 'HR Payroll Manager' || role === 'HR Manager' || role === 'Admin' || role === 'Employee' ? role : 'Employee';
+};
 const mergeUserAccounts = () => {
-  const users = readRecords('users').map(publicUser);
+  const users = readRecords('users').map(user => ({
+   ...publicUser(user),
+   id: user.id || user.userId || user.email || '',
+   name: user.name || `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || user.employeeId || user.id || '',
+   email: user.email || '',
+   company: user.company || '',
+   password: user.password || 'PeoplePay360123!',
+   role: normaliseAccountRole(user),
+   accountType: user.accountType || normaliseAccountRole(user),
+   status: user.status || 'Active',
+   ...(user.isDemo ? { isDemo: true } : {})
+  }));
   const employees = readRecords('employees').map(employee => ({
-    id: employee.userId || employee.id,
-    name: `${employee.firstName || ''} ${employee.lastName || ''}`.trim() || employee.email || employee.employeeId || employee.id,
-    email: employee.email || '',
-    company: employee.company || '',
-    password: employee.password || 'PeoplePay360123!',
-    role: employee.accountType || 'Employee',
-    accountType: employee.accountType || 'Employee',
-    status: employee.status || 'Active'
+   id: employee.userId || employee.id,
+   name: `${employee.firstName || ''} ${employee.lastName || ''}`.trim() || employee.email || employee.employeeId || employee.id,
+   email: employee.email || '',
+   company: employee.company || '',
+   password: employee.password || 'PeoplePay360123!',
+   role: normaliseAccountRole(employee),
+   accountType: employee.accountType || normaliseAccountRole(employee),
+   status: employee.status || 'Active'
   }));
   const merged = new Map();
   for (const account of [...users, ...employees]) {
-    const key = (account.email || account.id || account.name || '').toLowerCase();
-    if (!key) continue;
-    const existing = merged.get(key);
-   if (existing) {
-      merged.set(key, { ...existing, ...account, status: account.status || existing.status || 'Active', role: account.role || existing.role || 'Employee', accountType: account.accountType || existing.accountType || 'Employee' });
-      continue;
-    }
-    merged.set(key, account);
+   const key = normaliseAccountEmail(account.email || account.id || account.name || '');
+   if (!key) continue;
+   const existing = merged.get(key);
+   const next = existing ? { ...existing, ...account, id: account.id || existing.id || '', name: account.name || existing.name || '', email: account.email || existing.email || '', company: account.company || existing.company || '', password: account.password || existing.password || 'PeoplePay360123!', status: account.status || existing.status || 'Active', role: normaliseAccountRole({ ...existing, ...account }), accountType: account.accountType || existing.accountType || normaliseAccountRole({ ...existing, ...account }) } : account;
+   merged.set(key, next);
   }
   return [...merged.values()].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 };
@@ -663,28 +676,38 @@ function seedReferenceData() {
 }
 seedReferenceData();
 const demoAccounts = [
-  { id: 'DEMO-ADMIN', name: 'Aarav Kapoor', email: 'demo@peoplepay360.com', password: 'PeoplePay360123!', role: 'Admin' },
-  { id: 'DEMO-HR-MANAGER', name: 'Maya HR Manager', email: 'hr.manager@peoplepay360.com', password: 'HRManager123!', role: 'HR Manager' },
-  { id: 'DEMO-PAYROLL-USER', name: 'Noah Payroll User', email: 'payroll.user@peoplepay360.com', password: 'PayrollUser123!', role: 'HR Payroll User' },
-  { id: 'DEMO-PAYROLL-MANAGER', name: 'Isha Payroll Manager', email: 'payroll.manager@peoplepay360.com', password: 'PayrollManager123!', role: 'HR Payroll Manager' },
-  { id: 'DEMO-EMPLOYEE', name: 'Ethan Employee', email: 'employee@peoplepay360.com', password: 'Employee123!', role: 'Employee' }
+{ id: 'DEMO-ADMIN', name: 'Aarav Kapoor', email: 'demo@peoplepay360.com', password: 'PeoplePay360123!', role: 'Admin' },
+{ id: 'DEMO-HR-MANAGER', name: 'Maya HR Manager', email: 'hr.manager@peoplepay360.com', password: 'HRManager123!', role: 'HR Manager' },
+{ id: 'DEMO-PAYROLL-USER', name: 'Noah Payroll User', email: 'payroll.user@peoplepay360.com', password: 'PayrollUser123!', role: 'HR Payroll User' },
+{ id: 'DEMO-PAYROLL-MANAGER', name: 'Isha Payroll Manager', email: 'payroll.manager@peoplepay360.com', password: 'PayrollManager123!', role: 'HR Payroll Manager' },
+{ id: 'DEMO-EMPLOYEE', name: 'Ethan Employee', email: 'employee@peoplepay360.com', password: 'Employee123!', role: 'Employee' }
 ];
 for (const account of demoAccounts) {
-  const existing = readRecords('users').find(user => user.email?.toLowerCase() === account.email);
-  const user = writeRecord('users', { ...existing, ...account, company: 'PeoplePay360', status: 'Active', isDemo: true });
-  const onboarding = readRecords('onboarding').find(item => item.userId === user.id);
-  if (!onboarding && account.role !== 'Admin') {
-    writeRecord('onboarding', {
-      id: `ONBOARDING-${account.id}`,
-      userId: user.id,
-      firstName: account.name.split(' ')[0],
-      lastName: account.name.split(' ').slice(1).join(' '),
-      email: account.email,
-      company: user.company || account.company || 'PeoplePay360',
-      status: 'Pending',
-      isDemo: true
-    });
-  }
+db.run('DELETE FROM records WHERE collection = ? AND id = ?', ['users', account.id]);
+const user = writeRecord('users', {
+  id: account.id,
+  name: account.name,
+  email: account.email,
+  password: account.password,
+  company: 'PeoplePay360',
+  role: account.role,
+  accountType: account.role,
+  status: 'Active',
+  isDemo: true
+});
+const onboarding = readRecords('onboarding').find(item => String(item.userId || '').toLowerCase() === String(user.id || '').toLowerCase());
+if (!onboarding && account.role !== 'Admin') {
+  writeRecord('onboarding', {
+    id: `ONBOARDING-${account.id}`,
+    userId: user.id,
+    firstName: account.name.split(' ')[0],
+    lastName: account.name.split(' ').slice(1).join(' '),
+    email: account.email,
+    company: 'PeoplePay360',
+    status: 'Pending',
+    isDemo: true
+  });
+}
 }
 
 for (const user of readRecords('users')) {
@@ -704,6 +727,24 @@ for (const user of readRecords('users')) {
   }
 }
 reconcileOnboarding();
+const ensureDemoAccounts = () => {
+  const demoAccounts = [
+    { id: 'DEMO-ADMIN', name: 'Aarav Kapoor', email: 'demo@peoplepay360.com', password: 'PeoplePay360123!', company: 'PeoplePay360', role: 'Admin', accountType: 'Admin', status: 'Active' },
+    { id: 'DEMO-HR-MANAGER', name: 'Maya HR Manager', email: 'hr.manager@peoplepay360.com', password: 'HRManager123!', company: 'PeoplePay360', role: 'HR Manager', accountType: 'HR Manager', status: 'Active' },
+    { id: 'DEMO-PAYROLL-USER', name: 'Noah Payroll User', email: 'payroll.user@peoplepay360.com', password: 'PayrollUser123!', company: 'PeoplePay360', role: 'HR Payroll User', accountType: 'HR Payroll User', status: 'Active' },
+    { id: 'DEMO-PAYROLL-MANAGER', name: 'Isha Payroll Manager', email: 'payroll.manager@peoplepay360.com', password: 'PayrollManager123!', company: 'PeoplePay360', role: 'HR Payroll Manager', accountType: 'HR Payroll Manager', status: 'Active' },
+    { id: 'DEMO-EMPLOYEE', name: 'Ethan Employee', email: 'employee@peoplepay360.com', password: 'Employee123!', company: 'PeoplePay360', role: 'Employee', accountType: 'Employee', status: 'Active' }
+  ];
+  for (const account of demoAccounts) {
+      const existing = readRecords('users').find(user => String(user.email || '').toLowerCase() === String(account.email).toLowerCase() || user.id === account.id);
+      if (existing) {
+        db.run('DELETE FROM records WHERE collection = ? AND id = ?', ['users', existing.id]);
+      }
+      db.run('DELETE FROM records WHERE collection = ? AND id = ?', ['users', account.id]);
+      writeRecord('users', account);
+    }
+  };
+  ensureDemoAccounts();
 app.get('/api/health', (_req, res) => res.json({ ok: true, database: 'sqlite' }));
 app.get('/api/:collection', (req, res) => {
   if (!valid(req.params.collection)) return res.status(404).json({ error: 'Unknown collection' });
@@ -848,12 +889,21 @@ app.delete('/api/:collection/:id', (req, res) => {
   res.status(204).end();
 });
 app.post('/api/auth/login', (req, res) => {
-  const { email, password, role } = req.body || {};
+  const emailInput = String(req.body?.email || '').trim().toLowerCase();
+  const passwordInput = String(req.body?.password || '');
+
   const user = readRecords('users').find(item =>
-    item.email?.toLowerCase() === String(email || '').trim().toLowerCase() && item.password === password &&
-    item.status !== 'Inactive');
+    String(item.email || '').trim().toLowerCase() === emailInput &&
+    String(item.password || '') === passwordInput &&
+    item.status !== 'Inactive'
+  ) || mergeUserAccounts().find(item =>
+    String(item.email || '').trim().toLowerCase() === emailInput &&
+    String(item.password || '') === passwordInput &&
+    item.status !== 'Inactive'
+  );
+
   if (!user) return res.status(401).json({ error: 'Invalid email or password.' });
-  res.json({ data: { id: user.id, company: user.company, name: user.name, email: user.email, role: user.role } });
+  res.json({ data: { id: user.id, company: user.company || 'PeoplePay360', name: user.name || `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email, email: user.email, role: normaliseAccountRole(user) } });
 });
 const dist = path.join(root, 'dist');
 app.use(express.static(dist));
