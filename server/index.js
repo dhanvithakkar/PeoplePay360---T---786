@@ -839,8 +839,13 @@ app.get('/api/health', (_req, res) => res.json({ ok: true, database: 'sqlite' })
 app.get('/api/:collection', (req, res) => {
   if (!valid(req.params.collection)) return res.status(404).json({ error: 'Unknown collection' });
   if (req.params.collection === 'onboarding') reconcileOnboarding();
-  const records = req.params.collection === 'users' ? mergeUserAccounts() : readRecords(req.params.collection);
-  res.json({ data: records });
+  const allRecords = req.params.collection === 'users' ? mergeUserAccounts() : readRecords(req.params.collection);
+  const limit = Number.parseInt(req.query.limit, 10);
+  const offset = Number.parseInt(req.query.offset, 10);
+  const paginated = Number.isFinite(limit) && limit > 0
+    ? allRecords.slice(Number.isFinite(offset) && offset > 0 ? offset : 0, (Number.isFinite(offset) && offset > 0 ? offset : 0) + limit)
+    : allRecords;
+  res.json({ data: paginated, total: allRecords.length, limit: Number.isFinite(limit) ? limit : null, offset: Number.isFinite(offset) ? offset : 0 });
 });
 app.post('/api/payruns/:id/compute', (req, res) => {
   const payrun = readRecords('payruns').find(item => item.id === req.params.id);
@@ -1202,4 +1207,11 @@ app.get('*', (req, res, next) => {
   res.sendFile(path.join(dist, 'index.html'), error => error && res.status(404).json({ error: 'Build the frontend first.' }));
 });
 const port = process.env.PORT || 3000;
-app.listen(port, () => console.log(`PeoplePay360 server listening on http://localhost:${port}`));
+const server = app.listen(port, () => console.log(`PeoplePay360 server listening on http://localhost:${port}`));
+server.on('error', error => {
+  if (error.code === 'EADDRINUSE') {
+    console.warn(`Port ${port} is already in use. Using the existing PeoplePay360 API server.`);
+    return;
+  }
+  throw error;
+});

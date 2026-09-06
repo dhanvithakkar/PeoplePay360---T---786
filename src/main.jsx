@@ -118,6 +118,10 @@ function formatValue(value) {
   return String(value);
 }
 
+function workflowStatusClass(value) {
+  return `workflow-status workflow-status--${String(value || 'Pending').toLowerCase().replace(/\s+/g, '-')}`;
+}
+
 function Field({ definition, value, onChange, options: dynamicOptions }) {
   const [name, label, type = 'text', options] = definition;
   const useSelect = type === 'select' || !!(dynamicOptions && dynamicOptions.length && ['department', 'schedule', 'manager', 'employeeId', 'leaveType', 'salaryStructure', 'userId'].includes(name));
@@ -141,13 +145,23 @@ function ResourcePage({ slug, mode }) {
   const [lookupOptions, setLookupOptions] = useState({});
   const [employeeRecords, setEmployeeRecords] = useState([]);
   const [userRecords, setUserRecords] = useState([]);
-  const refresh = () => api.list(config.collection).then(setRecords).catch(err => setError(err.message)).finally(() => setLoading(false));
-  useEffect(() => { if (mode === 'list') refresh(); else if (mode === 'detail') { const id = new URLSearchParams(window.location.search).get('id'); if (id) api.list(config.collection).then(items => { const found = items.find(item => item.id === id); setEditing(found); setForm(found || {}); }); } }, [slug, mode]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [totalRecords, setTotalRecords] = useState(0);
+  const refresh = () => {
+    const load = slug === 'attendance'
+      ? api.page(config.collection, pageSize, (page - 1) * pageSize).then(result => { setRecords(result.data || []); setTotalRecords(result.total || 0); })
+      : api.list(config.collection).then(items => { setRecords(items); setTotalRecords(items.length); });
+    load.catch(err => setError(err.message)).finally(() => setLoading(false));
+  };
+  useEffect(() => { if (mode === 'list') refresh(); else if (mode === 'detail') { const id = new URLSearchParams(window.location.search).get('id'); if (id) api.list(config.collection).then(items => { const found = items.find(item => item.id === id); setEditing(found); setForm(found || {}); }); } }, [slug, mode, page, pageSize]);
   useEffect(() => {
+    if (mode === 'list') return;
     api.list('employees').then(setEmployeeRecords).catch(() => setEmployeeRecords([]));
     api.list('users').then(setUserRecords).catch(() => setUserRecords([]));
-  }, []);
+  }, [mode]);
   useEffect(() => {
+    if (mode === 'list') return;
     const lookupMap = {
       department: 'departments',
       schedule: 'schedules',
@@ -192,7 +206,8 @@ function ResourcePage({ slug, mode }) {
       });
       return [key, values];
     })).then(entries => setLookupOptions(Object.fromEntries(entries))).catch(() => setLookupOptions({}));
-  }, [slug, config.fields]);
+  }, [slug, mode, config.fields]);
+  useEffect(() => { setPage(1); }, [slug, mode]);
   const setValue = (key, value) => {
     setForm(current => {
       const next = { ...current, [key]: value };
@@ -249,9 +264,14 @@ function ResourcePage({ slug, mode }) {
     if (!window.confirm(message)) return;
     await api.remove(config.collection, id);
     setRecords(items => items.filter(item => item.id !== id));
+    setTotalRecords(count => Math.max(0, count - 1));
   }
+  const effectivePageSize = slug === 'attendance' ? pageSize : Math.max(1, totalRecords);
+  const totalPages = Math.max(1, Math.ceil(totalRecords / effectivePageSize));
+  const visibleRecords = slug === 'attendance' ? records : records.slice((page - 1) * pageSize, page * pageSize);
+  useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
   if (mode !== 'list') return <><PageHeader eyebrow={config.title} title={editing ? `Edit ${config.singular}` : `Add ${config.singular}`} subtitle={config.subtitle} /><form className="content-panel resource-form" onSubmit={save}><div className="resource-form-grid">{config.fields.map(field => <Field definition={field} value={form[field[0]]} onChange={setValue} options={lookupOptions[field[0]] || undefined} key={field[0]} />)}</div>{error && <p className="form-error">{error}</p>}<div className="form-actions"><button type="button" className="btn btn-quiet" onClick={() => navigate(`/${slug}`)}>Cancel</button><button className="btn btn-brand"><i className="bi bi-check2" />Save {config.singular}</button></div></form></>;
-  return <><PageHeader eyebrow={config.title} title={config.title} subtitle={config.subtitle} action={slug === 'employees' ? null : <button className="btn btn-brand" onClick={() => navigate(`/${slug}/new`)}><i className="bi bi-plus-lg" />Add {config.singular}</button>} /><section className="content-panel"><div className="panel-heading"><div><h2>{records.length} {config.title.toLowerCase()}</h2><p>Live records from the SQLite workspace database.</p></div></div>{error && <p className="form-error">{error}</p>}{loading ? <p className="empty-state">Loading records...</p> : <div className="table-responsive"><table className="resource-table"><thead><tr>{config.columns.map(([, label]) => <th key={label}>{label}</th>)}<th>Actions</th></tr></thead><tbody>{records.map(record => <tr key={record.id}>{config.columns.map(([key]) => <td key={key}>{formatValue(key === 'name' && slug === 'employees' ? `${record.firstName || ''} ${record.lastName || ''}`.trim() : record[key])}</td>)}<td className="table-actions"><button className="btn btn-quiet btn-sm" onClick={() => navigate(`/${slug}/edit?id=${encodeURIComponent(record.id)}`)}><i className="bi bi-pencil" />Edit</button><button className="btn btn-danger btn-sm" onClick={() => remove(record.id)}><i className="bi bi-trash3" /></button></td></tr>)}{!records.length && <tr><td colSpan={config.columns.length + 1} className="empty-state">No records yet. Add your first {config.singular} to get started.</td></tr>}</tbody></table></div>}</section></>;
+  return <><PageHeader eyebrow={config.title} title={config.title} subtitle={config.subtitle} action={slug === 'employees' ? null : <button className="btn btn-brand" onClick={() => navigate(`/${slug}/new`)}><i className="bi bi-plus-lg" />Add {config.singular}</button>} /><section className="content-panel"><div className="panel-heading"><div><h2>{slug === 'attendance' ? `${Math.min(pageSize, totalRecords)} / ${totalRecords}` : totalRecords} {config.title.toLowerCase()}</h2><p>Live records from the SQLite workspace database.</p></div>{slug === 'attendance' && <label className="form-label">Rows <select className="form-select" value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); setPage(1); }}><option value="10">10</option><option value="20">20</option><option value="50">50</option></select></label>}</div>{error && <p className="form-error">{error}</p>}{loading ? <p className="empty-state">Loading records...</p> : <><div className="table-responsive"><table className="resource-table"><thead><tr>{config.columns.map(([, label]) => <th key={label}>{label}</th>)}<th>Actions</th></tr></thead><tbody>{visibleRecords.map(record => <tr key={record.id}>{config.columns.map(([key]) => <td key={key}>{key === 'status' ? <span className={workflowStatusClass(record[key])}>{record[key] || 'Pending'}</span> : formatValue(key === 'name' && slug === 'employees' ? `${record.firstName || ''} ${record.lastName || ''}`.trim() : record[key])}</td>)}<td className="table-actions"><button className="btn btn-quiet btn-sm" onClick={() => navigate(`/${slug}/edit?id=${encodeURIComponent(record.id)}`)}><i className="bi bi-pencil" />Edit</button><button className="btn btn-danger btn-sm" onClick={() => remove(record.id)}><i className="bi bi-trash3" /></button></td></tr>)}{!records.length && <tr><td colSpan={config.columns.length + 1} className="empty-state">No records yet. Add your first {config.singular} to get started.</td></tr>}</tbody></table></div>{slug === 'attendance' && totalPages > 1 && <div className="attendance-pagination"><span className="attendance-pagination-copy">Showing {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, totalRecords)} of {totalRecords} records</span><div className="attendance-pagination-controls"><button className="attendance-page-button" disabled={page === 1} onClick={() => setPage(current => current - 1)}>Previous</button><button className="attendance-page-button" disabled={page === totalPages} onClick={() => setPage(current => current + 1)}>Next</button></div></div>}</>}</section></>;
 }
 
 function PayrunPage() {
@@ -1243,7 +1263,20 @@ function SalaryRulesPage() {
 
 function Dashboard() {
   const account = currentAccount();
-  return account?.role === 'Employee' ? <EmployeeDashboard account={account} /> : <PayrollDashboard />;
+  return account?.role === 'Employee' ? <EmployeeDashboard account={account} /> : <><PayrollDashboard /><WorkflowAlerts /></>;
+}
+
+function WorkflowAlerts() {
+  const [counts, setCounts] = useState({ onboarding: 0, leave: 0 });
+  useEffect(() => {
+    Promise.all([api.list('onboarding'), api.list('leaveRequests')]).then(([onboarding, leaveRequests]) => {
+      setCounts({
+        onboarding: onboarding.filter(item => item.status === 'Pending' || item.status === 'In progress').length,
+        leave: leaveRequests.filter(item => item.status === 'Pending').length
+      });
+    });
+  }, []);
+  return <section className="workflow-alerts"><a href="/onboarding" className="workflow-alert workflow-alert--pending"><span className="workflow-alert-icon"><i className="bi bi-person-plus" /></span><span><strong>{counts.onboarding} onboarding items need attention</strong><small>Complete employee profiles created by Admin.</small></span><i className="bi bi-arrow-up-right" /></a><a href="/leave-requests" className="workflow-alert workflow-alert--warning"><span className="workflow-alert-icon"><i className="bi bi-calendar2-check" /></span><span><strong>{counts.leave} leave requests pending</strong><small>Review and approve employee time off.</small></span><i className="bi bi-arrow-up-right" /></a></section>;
 }
 
 function PayrollDashboard() {

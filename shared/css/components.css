@@ -47,3 +47,19 @@ body.sidebar-collapsed .app-topbar { left: var(--sidebar-collapsed-width); }
 .badge-soft--teal { border-color: rgba(1,126,132,.35); background: rgba(1,126,132,.13); color: #77d9d5; }
 .status-dot { display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; }
 .status-dot--success { background: var(--success); box-shadow: 0 0 0 3px rgba(34,197,94,.1); }
+.workflow-alerts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
+.workflow-alert { display: flex; align-items: center; gap: 12px; min-height: 68px; padding: 13px 15px; border: 1px solid var(--border); border-radius: 8px; background: var(--card-bg); color: var(--text); }
+.workflow-alert:hover { border-color: var(--brand-hover); background: var(--surface); }
+.workflow-alert-icon { display: grid; width: 32px; height: 32px; flex: 0 0 32px; place-items: center; border-radius: 6px; }
+.workflow-alert--pending .workflow-alert-icon { background: rgba(245,158,11,.13); color: #f8c568; }
+.workflow-alert--warning .workflow-alert-icon { background: rgba(239,68,68,.13); color: #fca5a5; }
+.workflow-alert span:nth-child(2) { min-width: 0; flex: 1; }
+.workflow-alert strong, .workflow-alert small { display: block; }
+.workflow-alert strong { font-size: 11px; }
+.workflow-alert small { margin-top: 4px; color: var(--text-muted); font-size: 10px; }
+.workflow-alert > i:last-child { color: var(--text-muted); }
+.workflow-status { display: inline-flex; align-items: center; border-radius: 4px; padding: 5px 7px; font-size: 9px; font-weight: 800; }
+.workflow-status--pending, .workflow-status--in-progress { background: rgba(245,158,11,.12); color: #f8c568; }
+.workflow-status--approved, .workflow-status--completed, .workflow-status--active { background: rgba(34,197,94,.11); color: #79d69b; }
+.workflow-status--rejected, .workflow-status--inactive { background: rgba(239,68,68,.11); color: #fca5a5; }
+@media (max-width: 700px) { .workflow-alerts { grid-template-columns: 1fr; } }

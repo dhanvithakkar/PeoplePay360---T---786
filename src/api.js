@@ -27,6 +27,7 @@ async function request(path, options = {}) {
 
 export const api = {
   list: collection => request(`/${collection}`).then(result => result.data || []),
+  page: (collection, limit, offset = 0) => request(`/${collection}?limit=${limit}&offset=${offset}`),
   create: (collection, record) => request(`/${collection}`, { method: 'POST', body: JSON.stringify(record) }).then(result => result.data),
   update: (collection, id, record) => request(`/${collection}/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(record) }).then(result => result.data),
   remove: (collection, id) => request(`/${collection}/${encodeURIComponent(id)}`, { method: 'DELETE' }),
