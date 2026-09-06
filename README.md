@@ -16,6 +16,8 @@ This project is prepared for a hackathon/demo environment and includes seeded MV
 - SQLite-backed data model with seeded demo records
 - Responsive UI for desktop and smaller screens
 
+All bundled employee, attendance, leave, payroll, bank, and login records are synthetic hackathon/demo data. Do not replace them with production records before publishing or sharing the repository.
+
 ## Project structure
 
 - `src/` — React frontend
@@ -43,6 +45,8 @@ Then open:
 
 - Frontend: `http://localhost:5173`
 - Backend API: `http://localhost:3000`
+
+Open `http://localhost:5173/login` to sign in. The login page also includes buttons that fill the demo credentials automatically. Keep both processes running while using the frontend; `npm run dev` starts Vite and the API server together.
 
 To run the app in production-like mode:
 
@@ -76,13 +80,15 @@ This database file is included in the project so collaborators can use the same 
 
 ## Demo accounts
 
-The app seeds demo credentials for fast testing:
+The app seeds demo credentials for fast testing. Use the email and password exactly as shown below:
 
 - Admin: `demo@peoplepay360.com` / `PeoplePay360123!`
 - HR Manager: `hr.manager@peoplepay360.com` / `HRManager123!`
 - HR Payroll User: `payroll.user@peoplepay360.com` / `PayrollUser123!`
 - HR Payroll Manager: `payroll.manager@peoplepay360.com` / `PayrollManager123!`
 - Employee: `employee@peoplepay360.com` / `Employee123!`
+
+If a demo user was deleted or the local database is missing a demo account, restart the API with `npm run dev` or `npm start`. The server repairs the demo accounts before each login attempt.
 
 ## API overview
 

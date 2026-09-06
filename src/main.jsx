@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, useLocation, useNavigate } from 'react-router-dom';
+import { jsPDF } from 'jspdf';
 import { api } from './api';
 import './styles.css';
 import '../shared/css/main.css';
@@ -359,72 +360,13 @@ function PayrunPage() {
 
   const computePayrun = async () => {
     if (!selectedPayrun || selectedPayrun.status !== 'Draft') return;
-    const rules = await api.list('salaryRules');
-    const structureRules = rules.filter(rule =>
-      String(rule.structureId || rule.structure || '').toLowerCase() === String(selectedPayrun.structureId || '').toLowerCase() ||
-      String(rule.structureName || '').toLowerCase() === String(selectedPayrun.structureName || '').toLowerCase()
-    ).sort((a, b) => (Number(a.sequence || 0) - Number(b.sequence || 0)));
-
-    const payrunEmployees = employees.filter(employee => {
-      const ids = selectedPayrun.employeeIds || [];
-      return ids.includes(employee.id) || ids.includes(employee.employeeId);
-    });
-
-    let createdCount = 0;
-    for (const employee of payrunEmployees) {
-      const baseSalary = Number(employee.salary || 0);
-      let earnings = 0;
-      let deductions = 0;
-      const earningsRows = [];
-      const deductionRows = [];
-
-      structureRules.forEach(rule => {
-        const amount = rule.calculationType === 'Percentage' ? (baseSalary * Number(rule.value || 0)) / 100 : Number(rule.value || 0);
-        if (rule.category === 'Basic') {
-          earnings += amount;
-          earningsRows.push({ description: rule.name, amount });
-        } else if (rule.category === 'Allowance') {
-          earnings += amount;
-          earningsRows.push({ description: rule.name, amount });
-        } else if (rule.category === 'Deduction') {
-          deductions += amount;
-          deductionRows.push({ description: rule.name, amount });
-        }
-      });
-
-      const gross = Math.max(0, baseSalary + earnings);
-      const net = Math.max(0, gross - deductions);
-      const existingPayslips = await api.list('payslips');
-      const hasPayslip = existingPayslips.some(item => item.payrunId === selectedPayrun.id && (item.employeeId === employee.id || item.employeeId === employee.employeeId));
-      if (!hasPayslip) {
-        await api.create('payslips', {
-          id: `PS-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          employeeId: employee.id,
-          employeeName: `${employee.firstName || ''} ${employee.lastName || ''}`.trim() || employee.email || 'Employee',
-          employeeNumber: employee.employeeId || employee.id,
-          payrunId: selectedPayrun.id,
-          payrunName: selectedPayrun.name,
-          period: `${selectedPayrun.startDate || ''} to ${selectedPayrun.endDate || ''}`.trim() || 'N/A',
-          structureId: selectedPayrun.structureId,
-          structureName: selectedPayrun.structureName,
-          gross,
-          deductions,
-          net,
-          status: 'Computed',
-          earnings: earningsRows.length ? earningsRows : [{ description: 'Basic salary', amount: baseSalary }],
-          deductionsList: deductionRows.length ? deductionRows : [{ description: 'Standard deduction', amount: 0 }],
-          contract: employee.contractType || 'Full-time',
-          department: employee.department || 'General',
-          position: employee.position || 'Employee'
-        });
-        createdCount += 1;
-      }
-    }
-
-    if (createdCount || selectedPayrun.status === 'Draft') {
-      const updated = await api.update('payruns', selectedPayrun.id, { ...selectedPayrun, status: 'Computed' });
-      setPayruns(current => current.map(item => item.id === updated.id ? updated : item));
-      setSelectedPayrunId(updated.id);
+    setError('');
+    try {
+      const result = await api.computePayrun(selectedPayrun.id);
+      setPayruns(current => current.map(item => item.id === result.payrun.id ? result.payrun : item));
+      setSelectedPayrunId(result.payrun.id);
+    } catch (err) {
+      setError(err.message);
     }
   };
 
@@ -516,6 +458,7 @@ function PayrunPage() {
             <button type="button" className="btn btn-quiet" disabled={selectedPayrun.status !== 'Computed'} onClick={validatePayrun}>Validate</button>
             <button type="button" className="btn btn-quiet" disabled={selectedPayrun.status !== 'Validated'} onClick={markPayrunPaid}>Mark as Paid</button>
           </div>
+          {error && <p className="form-error">{error}</p>}
 
           <div className="payrun-summary-grid">
             {summaryCards.map(([label, value, note]) => <div className="payrun-summary-card" key={label}><span>{label}</span><strong>{value}</strong><small style={{ display: 'block', marginTop: '6px', color: '#6b7280', fontSize: '10px' }}>{note}</small></div>)}
@@ -671,28 +614,75 @@ function PayslipPage() {
 
     const relatedEmployee = employees.find(employeeItem => employeeItem.id === item.employeeId || employeeItem.employeeId === item.employeeId) || employee;
     const relatedPayrun = payruns.find(payrunItem => payrunItem.id === item.payrunId) || payrun;
+    const companyName = item.companyName || 'PeoplePay360';
     const employeeName = item.employeeName || `${relatedEmployee.firstName || ''} ${relatedEmployee.lastName || ''}`.trim() || 'Employee';
     const employeeNumber = item.employeeNumber || relatedEmployee.employeeId || relatedEmployee.id || 'N/A';
     const period = item.period || `${relatedPayrun?.startDate || ''} - ${relatedPayrun?.endDate || ''}`;
     const earnings = item.earnings || [{ description: 'Basic salary', amount: Number(item.gross || 0) }];
     const deductions = item.deductionsList || [{ description: 'Standard deduction', amount: Number(item.deductions || 0) }];
+    const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const margin = 42;
+    const right = pageWidth - margin;
+    const money = value => `INR ${Number(value || 0).toLocaleString('en-IN')}`;
+    let y = 52;
 
-    const rows = [
-      ...earnings.map(row => `<tr><td>${(row.description || 'Earning').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</td><td>INR ${Number(row.amount || 0).toLocaleString('en-IN')}</td></tr>`),
-      ...deductions.map(row => `<tr><td>${(row.description || 'Deduction').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</td><td>INR ${Number(row.amount || 0).toLocaleString('en-IN')}</td></tr>`)
-    ].join('');
+    pdf.setTextColor(25, 32, 48);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(22);
+    pdf.text(companyName, margin, y);
+    y += 28;
+    pdf.setFontSize(14);
+    pdf.text('Payslip', margin, y);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(10);
+    pdf.text(`Status: ${item.status || 'Pending'}`, right, y, { align: 'right' });
+    y += 26;
+    pdf.setDrawColor(210, 214, 222);
+    pdf.line(margin, y, right, y);
+    y += 24;
 
-    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8" /><title>Payslip ${item.id}</title><style>body{font-family:Arial,sans-serif;padding:32px;color:#111827}h1{margin:0 0 12px}table{width:100%;border-collapse:collapse;margin-top:16px}th,td{border:1px solid #d1d5db;padding:10px 12px;text-align:left}th{background:#f3f4f6}.totals{margin-top:18px;display:flex;flex-direction:column;gap:8px;align-items:flex-end}.meta{display:grid;grid-template-columns:repeat(2,minmax(180px,1fr));gap:12px;margin:16px 0}.label{font-size:12px;color:#6b7280}.value{font-weight:700}.badge{display:inline-block;padding:6px 10px;border-radius:999px;background:#f3f4f6;font-weight:700}</style></head><body><h1>PeoplePay360 Payslip</h1><div class="badge">${item.status || 'Pending'}</div><div class="meta"><div><div class="label">Employee Name</div><div class="value">${employeeName.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div></div><div><div class="label">Employee ID</div><div class="value">${employeeNumber}</div></div><div><div class="label">Payrun</div><div class="value">${(item.payrunName || relatedPayrun?.name || 'Payroll Run').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div></div><div><div class="label">Period</div><div class="value">${period}</div></div></div><table><thead><tr><th>Description</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table><div class="totals"><div>Gross: INR ${Number(item.gross || 0).toLocaleString('en-IN')}</div><div>Deductions: INR ${Number(item.deductions || 0).toLocaleString('en-IN')}</div><div><strong>Net Salary: INR ${Number(item.net || 0).toLocaleString('en-IN')}</strong></div></div></body></html>`;
+    const metadata = [['Employee Name', employeeName], ['Employee ID', employeeNumber], ['Payrun', item.payrunName || relatedPayrun?.name || 'Payroll Run'], ['Period', period]];
+    pdf.setFontSize(9);
+    metadata.forEach(([label, value], index) => {
+      const x = index % 2 === 0 ? margin : pageWidth / 2;
+      const rowY = y + Math.floor(index / 2) * 36;
+      pdf.setTextColor(105, 113, 128);
+      pdf.text(label, x, rowY);
+      pdf.setTextColor(25, 32, 48);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(String(value), x, rowY + 14);
+      pdf.setFont('helvetica', 'normal');
+    });
+    y += 84;
+    pdf.setFillColor(243, 244, 246);
+    pdf.rect(margin, y - 15, right - margin, 26, 'F');
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Description', margin + 10, y);
+    pdf.text('Amount', right - 10, y, { align: 'right' });
+    y += 26;
 
-    const blob = new Blob([html], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${(employeeNumber || 'payslip').replace(/\s+/g, '-')}-${(item.id || 'download')}.html`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    const rows = [...earnings.map(row => ['Earning - ' + (row.description || 'Earning'), row.amount]), ...deductions.map(row => ['Deduction - ' + (row.description || 'Deduction'), row.amount])];
+    pdf.setFont('helvetica', 'normal');
+    rows.forEach(([description, amount]) => {
+      pdf.setDrawColor(225, 228, 234);
+      pdf.line(margin, y + 8, right, y + 8);
+      pdf.text(String(description), margin + 10, y);
+      pdf.text(money(amount), right - 10, y, { align: 'right' });
+      y += 25;
+    });
+    y += 18;
+    pdf.setFontSize(11);
+    [['Gross', item.gross], ['Deductions', item.deductions], ['Net Salary', item.net]].forEach(([label, value], index) => {
+      pdf.setFont('helvetica', index === 2 ? 'bold' : 'normal');
+      pdf.text(`${label}:`, right - 145, y);
+      pdf.text(money(value), right, y, { align: 'right' });
+      y += index === 1 ? 28 : 22;
+    });
+    pdf.setFontSize(8);
+    pdf.setTextColor(105, 113, 128);
+    pdf.text(`Generated by ${companyName}`, margin, pdf.internal.pageSize.getHeight() - 35);
+    pdf.save(`${(employeeNumber || 'payslip').replace(/\s+/g, '-')}-${(item.id || 'download')}.pdf`);
   };
 
   if (loading) return <div className="content-panel"><p className="empty-state">Loading payslips...</p></div>;
@@ -748,7 +738,7 @@ function PayslipPage() {
       <div className="payslip-document">
         <div className="payslip-document-header">
           <div>
-            <div className="payslip-brand">PeoplePay360</div>
+            <div className="payslip-brand">{selectedPayslip.companyName || 'PeoplePay360'}</div>
             <h2>{selectedPayslip.id}</h2>
             <p>Payroll period {selectedPayslip.period || `${payrun?.startDate || ''} - ${payrun?.endDate || ''}`}</p>
           </div>

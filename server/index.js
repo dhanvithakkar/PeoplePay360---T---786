@@ -435,6 +435,95 @@ function writeRecord(collection, record) {
   persist();
   return value;
 }
+
+function getLeaveDays(employee, payrun, leaveRequests, leaveTypes) {
+  const paid = new Set();
+  const unpaid = new Set();
+  const start = new Date(`${payrun.startDate}T00:00:00`);
+  const end = new Date(`${payrun.endDate}T00:00:00`);
+  const formatDate = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  const matchingRequests = leaveRequests.filter(request =>
+    request.status === 'Approved' &&
+    (request.employeeId === employee.id || request.employeeId === employee.employeeId) &&
+    request.startDate <= payrun.endDate && request.endDate >= payrun.startDate
+  );
+  for (const request of matchingRequests) {
+    const leaveType = leaveTypes.find(type =>
+      type.id === request.leaveType || type.name === request.leaveType || type.code === request.leaveType
+    );
+    const target = leaveType?.type === 'Paid' ? paid : unpaid;
+    const leaveStart = new Date(`${request.startDate}T00:00:00`) > start ? new Date(`${request.startDate}T00:00:00`) : start;
+    const leaveEnd = new Date(`${request.endDate}T00:00:00`) < end ? new Date(`${request.endDate}T00:00:00`) : end;
+    for (const date = new Date(leaveStart); date <= leaveEnd; date.setDate(date.getDate() + 1)) {
+      if (date.getDay() !== 0 && date.getDay() !== 6) target.add(formatDate(date));
+    }
+  }
+  return { paid, unpaid };
+}
+
+function calculatePayrunPayslip(payrun, employee, rules, companyName, attendanceRecords, leaveDays) {
+  const monthlySalary = Math.max(0, Number(employee.salary || 0));
+  const start = new Date(`${payrun.startDate}T00:00:00`);
+  const end = new Date(`${payrun.endDate}T00:00:00`);
+  const validDates = !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && end >= start;
+  const periodDays = validDates ? Math.floor((end - start) / 86400000) + 1 : 0;
+  const monthDays = validDates ? new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate() : 0;
+  const payableDates = new Set(attendanceRecords.filter(record => ['Present', 'Late'].includes(record.status)).map(record => record.date));
+  leaveDays.paid.forEach(date => payableDates.add(date));
+  const payableDays = payableDates.size;
+  const proration = monthDays ? payableDays / monthDays : 0;
+  const baseSalary = Math.round(monthlySalary * proration * 100) / 100;
+  let gross = baseSalary;
+  let deductions = 0;
+  const paidLeaveLabel = leaveDays.paid.size ? ` (including ${leaveDays.paid.size} paid leave day${leaveDays.paid.size === 1 ? '' : 's'})` : '';
+  const earnings = [{ description: `Basic salary${paidLeaveLabel}`, amount: baseSalary }];
+  const deductionsList = [];
+
+  for (const rule of rules) {
+    const category = String(rule.category || '').toLowerCase();
+    if (category === 'basic') continue;
+    if (!['allowance', 'earning', 'deduction'].includes(category)) continue;
+    const value = Number(rule.value || 0);
+    const amount = rule.calculationType === 'Percentage'
+      ? (baseSalary * value) / 100
+      : value * proration;
+    const roundedAmount = Math.round(amount * 100) / 100;
+    if (category === 'deduction') {
+      deductions += roundedAmount;
+      deductionsList.push({ description: rule.name || 'Deduction', amount: roundedAmount });
+    } else {
+      gross += roundedAmount;
+      earnings.push({ description: rule.name || 'Earning', amount: roundedAmount });
+    }
+  }
+
+  gross = Math.round(gross * 100) / 100;
+  deductions = Math.round(deductions * 100) / 100;
+  return {
+    employeeId: employee.id,
+    employeeName: `${employee.firstName || ''} ${employee.lastName || ''}`.trim() || employee.email || 'Employee',
+    employeeNumber: employee.employeeId || employee.id,
+    payrunId: payrun.id,
+    payrunName: payrun.name,
+    period: `${payrun.startDate || ''} to ${payrun.endDate || ''}`.trim() || 'N/A',
+    structureId: payrun.structureId,
+    structureName: payrun.structureName,
+    companyName: companyName || 'PeoplePay360',
+    attendanceDays: attendanceRecords.length,
+    payableDays,
+    paidLeaveDays: leaveDays.paid.size,
+    unpaidLeaveDays: leaveDays.unpaid.size,
+    gross,
+    deductions,
+    net: Math.max(0, Math.round((gross - deductions) * 100) / 100),
+    status: 'Computed',
+    earnings,
+    deductionsList: deductionsList.length ? deductionsList : [{ description: 'Standard deduction', amount: 0 }],
+    contract: employee.contractType || 'Full-time',
+    department: employee.department || 'General',
+    position: employee.position || 'Employee'
+  };
+}
 function ensureOnboarding(user) {
   if (!user || user.role === 'Admin') return;
   const onboarding = readRecords('onboarding').find(item =>
@@ -753,6 +842,53 @@ app.get('/api/:collection', (req, res) => {
   const records = req.params.collection === 'users' ? mergeUserAccounts() : readRecords(req.params.collection);
   res.json({ data: records });
 });
+app.post('/api/payruns/:id/compute', (req, res) => {
+  const payrun = readRecords('payruns').find(item => item.id === req.params.id);
+  if (!payrun) return res.status(404).json({ error: 'Payrun not found.' });
+  if (payrun.status !== 'Draft') return res.status(409).json({ error: 'Only draft payruns can be computed.' });
+
+  const rules = readRecords('salaryRules').filter(rule =>
+    String(rule.structureId || rule.structure || '').toLowerCase() === String(payrun.structureId || '').toLowerCase() ||
+    String(rule.structureName || '').toLowerCase() === String(payrun.structureName || '').toLowerCase()
+  ).sort((a, b) => Number(a.sequence || 0) - Number(b.sequence || 0));
+  const employeeIds = new Set(payrun.employeeIds || []);
+  const employees = readRecords('employees').filter(employee => employeeIds.has(employee.id) || employeeIds.has(employee.employeeId));
+  if (!employees.length) return res.status(400).json({ error: 'Select at least one employee before computing payroll.' });
+  const attendance = readRecords('attendance');
+  const leaveRequests = readRecords('leaveRequests');
+  const leaveTypes = readRecords('leaveTypes');
+  const attendanceByEmployee = new Map();
+  const leaveDaysByEmployee = new Map();
+  const missingAttendance = [];
+  for (const employee of employees) {
+    const employeeAttendance = attendance.filter(record =>
+      (record.employeeId === employee.id || record.employeeId === employee.employeeId) &&
+      record.date >= payrun.startDate && record.date <= payrun.endDate
+    );
+    attendanceByEmployee.set(employee.id, employeeAttendance);
+    const leaveDays = getLeaveDays(employee, payrun, leaveRequests, leaveTypes);
+    leaveDaysByEmployee.set(employee.id, leaveDays);
+    if (!employeeAttendance.length && !leaveDays.paid.size && !leaveDays.unpaid.size) {
+      missingAttendance.push(employee.employeeId || employee.id);
+    }
+  }
+  const uniqueMissingAttendance = [...new Set(missingAttendance)];
+  if (uniqueMissingAttendance.length) {
+    return res.status(422).json({
+      error: `Cannot compute payroll: attendance or approved leave is missing for ${uniqueMissingAttendance.length} selected employee(s) in the pay period.`,
+      missingEmployees: uniqueMissingAttendance
+    });
+  }
+  const settings = readRecords('settings')[0] || {};
+  const existing = readRecords('payslips').filter(item => item.payrunId === payrun.id);
+  const generated = employees.map(employee => {
+    const payslip = calculatePayrunPayslip(payrun, employee, rules, settings.companyName, attendanceByEmployee.get(employee.id) || [], leaveDaysByEmployee.get(employee.id) || { paid: new Set(), unpaid: new Set() });
+    const prior = existing.find(item => item.employeeId === employee.id || item.employeeId === employee.employeeId);
+    return writeRecord('payslips', { ...payslip, id: prior?.id || `PS-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` });
+  });
+  const updatedPayrun = writeRecord('payruns', { ...payrun, status: 'Computed' });
+  res.json({ data: { payrun: updatedPayrun, payslips: generated } });
+});
 app.post('/api/:collection', (req, res) => {
   if (!valid(req.params.collection)) return res.status(404).json({ error: 'Unknown collection' });
   if (req.params.collection === 'users') {
@@ -927,8 +1063,122 @@ const ensureDemoAccounts = () => {
     }
   }
 };
+
+function ensureAttendanceHistory() {
+  const employees = readRecords('employees');
+  if (!employees.length) return;
+
+  const today = new Date();
+  const end = new Date(today.getFullYear(), today.getMonth(), 0);
+  const start = new Date(today.getFullYear(), today.getMonth() - 3, 1);
+  const formatDate = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  const attendanceRecords = readRecords('attendance');
+  const generatedHistory = attendanceRecords.filter(record => String(record.id || '').startsWith('ATT-HISTORY-'));
+  for (const record of generatedHistory) db.run('DELETE FROM attendance WHERE id = ?', [record.id]);
+  db.run("DELETE FROM records WHERE collection = 'attendance' AND id LIKE 'ATT-HISTORY-%'");
+  const existingKeys = new Set(readRecords('attendance').map(item => `${item.employeeId}|${item.date}`));
+  let created = 0;
+
+  db.run('BEGIN TRANSACTION');
+  try {
+    for (const employee of employees) {
+      for (const date = new Date(start); date <= end; date.setDate(date.getDate() + 1)) {
+        const day = date.getDay();
+        if (day === 0 || day === 6) continue;
+        const dateValue = formatDate(date);
+        const employeeId = employee.employeeId || employee.id;
+        const key = `${employeeId}|${dateValue}`;
+        if (existingKeys.has(key)) continue;
+
+        const seed = [...`${employee.id}-${dateValue}`].reduce((sum, character) => sum + character.charCodeAt(0), 0);
+        const status = seed % 20 === 0 ? 'Absent' : seed % 9 === 0 ? 'Late' : 'Present';
+        const record = {
+          id: `ATT-HISTORY-${employee.id}-${dateValue}`,
+          employeeId,
+          date: dateValue,
+          checkIn: status === 'Absent' ? '' : status === 'Late' ? '09:24' : '09:00',
+          checkOut: status === 'Absent' ? '' : '17:30',
+          status,
+          notes: status === 'Absent' ? 'Scheduled absence' : status === 'Late' ? 'Late arrival' : 'Regular workday'
+        };
+        db.run(`INSERT INTO records(id, collection, data) VALUES (?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = CURRENT_TIMESTAMP`,
+        [record.id, 'attendance', JSON.stringify(record)]);
+        upsertAttendanceRecord(record);
+        existingKeys.add(key);
+        created += 1;
+      }
+    }
+    db.run('COMMIT');
+  } catch (error) {
+    db.run('ROLLBACK');
+    throw error;
+  }
+  if (created) persist();
+  console.log(`Attendance history ready: ${created} records added for ${employees.length} employees.`);
+}
+
+function ensureLeaveHistory() {
+  const employees = readRecords('employees');
+  const leaveTypes = readRecords('leaveTypes');
+  if (!employees.length || !leaveTypes.length) return;
+
+  const today = new Date();
+  const start = new Date(today.getFullYear(), today.getMonth() - 3, 1);
+  const existing = new Set(readRecords('leaveRequests').map(item => item.id));
+  const formatDate = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  let created = 0;
+
+  db.run('BEGIN TRANSACTION');
+  try {
+    for (const [index, employee] of employees.entries()) {
+      const seed = [...employee.id].reduce((sum, character) => sum + character.charCodeAt(0), 0);
+      const monthStart = new Date(start.getFullYear(), start.getMonth() + (seed % 3), 1);
+      const leaveDate = new Date(monthStart);
+      leaveDate.setDate(1 + (seed % 18));
+      while (leaveDate.getDay() === 0 || leaveDate.getDay() === 6) leaveDate.setDate(leaveDate.getDate() + 1);
+      const duration = 1 + (seed % 3);
+      const leaveEnd = new Date(leaveDate);
+      let workdays = 1;
+      while (workdays < duration) {
+        leaveEnd.setDate(leaveEnd.getDate() + 1);
+        if (leaveEnd.getDay() !== 0 && leaveEnd.getDay() !== 6) workdays += 1;
+      }
+      const leaveType = leaveTypes[index % leaveTypes.length];
+      const id = `LEAVE-HISTORY-${employee.id}-${formatDate(leaveDate)}`;
+      if (existing.has(id)) continue;
+      const record = {
+        id,
+        employeeId: employee.employeeId || employee.id,
+        leaveType: leaveType.name,
+        year: String(leaveDate.getFullYear()),
+        allocated: leaveType.days || 0,
+        used: duration,
+        status: seed % 5 === 0 ? 'Pending' : 'Approved',
+        startDate: formatDate(leaveDate),
+        endDate: formatDate(leaveEnd),
+        reason: `Demo ${leaveType.name.toLowerCase()} request`
+      };
+      db.run(`INSERT INTO records(id, collection, data) VALUES (?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = CURRENT_TIMESTAMP`,
+      [record.id, 'leaveRequests', JSON.stringify(record)]);
+      upsertLeaveRequestRecord(record);
+      existing.add(id);
+      created += 1;
+    }
+    db.run('COMMIT');
+  } catch (error) {
+    db.run('ROLLBACK');
+    throw error;
+  }
+  if (created) persist();
+  console.log(`Leave history ready: ${created} demo requests added for ${employees.length} employees.`);
+}
 ensureDemoAccounts();
+ensureAttendanceHistory();
+ensureLeaveHistory();
 app.post('/api/auth/login', (req, res) => {
+  ensureDemoAccounts();
   const emailInput = String(req.body?.email || '').trim().toLowerCase();
   const passwordInput = String(req.body?.password || '');
 
