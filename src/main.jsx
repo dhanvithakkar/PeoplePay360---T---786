@@ -265,24 +265,21 @@ function PayrunPage() {
   const [draft, setDraft] = useState({ structureId: '', startDate: '', endDate: '', employeeIds: [] });
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    Promise.all([
+  const loadData = async () => {
+    const [payrunItems, structureItems, employeeItems] = await Promise.all([
       api.list('payruns'),
       api.list('salaryStructures'),
       api.list('employees')
-    ]).then(([payrunItems, structureItems, employeeItems]) => {
-      setPayruns(payrunItems);
-      setSalaryStructures(structureItems);
-      setEmployees(employeeItems);
-      if (!selectedPayrunId && payrunItems.length) {
-        setSelectedPayrunId(payrunItems[0].id);
-      }
-    }).catch(() => {
-      setPayruns([]);
-      setSalaryStructures([]);
-      setEmployees([]);
-    });
-  }, []);
+    ]);
+    setPayruns(payrunItems);
+    setSalaryStructures(structureItems);
+    setEmployees(employeeItems);
+    if (!selectedPayrunId && payrunItems.length) {
+      setSelectedPayrunId(payrunItems[0].id);
+    }
+  };
+
+  useEffect(() => { loadData().catch(() => { setPayruns([]); setSalaryStructures([]); setEmployees([]); }); }, []);
 
   useEffect(() => {
     if (selectedPayrunId && !payruns.some(item => item.id === selectedPayrunId)) {
@@ -290,9 +287,7 @@ function PayrunPage() {
     }
   }, [payruns, selectedPayrunId]);
 
-  useEffect(() => {
-    setPage(1);
-  }, [search]);
+  useEffect(() => { setPage(1); }, [search]);
 
   const formatCurrency = value => `INR ${Number(value || 0).toLocaleString('en-IN')}`;
   const findStructureName = id => salaryStructures.find(item => item.id === id || item.name === id)?.name || id || 'General';
@@ -362,58 +357,206 @@ function PayrunPage() {
     resetWizard();
   };
 
+  const computePayrun = async () => {
+    if (!selectedPayrun || selectedPayrun.status !== 'Draft') return;
+    const rules = await api.list('salaryRules');
+    const structureRules = rules.filter(rule =>
+      String(rule.structureId || rule.structure || '').toLowerCase() === String(selectedPayrun.structureId || '').toLowerCase() ||
+      String(rule.structureName || '').toLowerCase() === String(selectedPayrun.structureName || '').toLowerCase()
+    ).sort((a, b) => (Number(a.sequence || 0) - Number(b.sequence || 0)));
+
+    const payrunEmployees = employees.filter(employee => {
+      const ids = selectedPayrun.employeeIds || [];
+      return ids.includes(employee.id) || ids.includes(employee.employeeId);
+    });
+
+    let createdCount = 0;
+    for (const employee of payrunEmployees) {
+      const baseSalary = Number(employee.salary || 0);
+      let earnings = 0;
+      let deductions = 0;
+      const earningsRows = [];
+      const deductionRows = [];
+
+      structureRules.forEach(rule => {
+        const amount = rule.calculationType === 'Percentage' ? (baseSalary * Number(rule.value || 0)) / 100 : Number(rule.value || 0);
+        if (rule.category === 'Basic') {
+          earnings += amount;
+          earningsRows.push({ description: rule.name, amount });
+        } else if (rule.category === 'Allowance') {
+          earnings += amount;
+          earningsRows.push({ description: rule.name, amount });
+        } else if (rule.category === 'Deduction') {
+          deductions += amount;
+          deductionRows.push({ description: rule.name, amount });
+        }
+      });
+
+      const gross = Math.max(0, baseSalary + earnings);
+      const net = Math.max(0, gross - deductions);
+      const existingPayslips = await api.list('payslips');
+      const hasPayslip = existingPayslips.some(item => item.payrunId === selectedPayrun.id && (item.employeeId === employee.id || item.employeeId === employee.employeeId));
+      if (!hasPayslip) {
+        await api.create('payslips', {
+          id: `PS-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          employeeId: employee.id,
+          employeeName: `${employee.firstName || ''} ${employee.lastName || ''}`.trim() || employee.email || 'Employee',
+          employeeNumber: employee.employeeId || employee.id,
+          payrunId: selectedPayrun.id,
+          payrunName: selectedPayrun.name,
+          period: `${selectedPayrun.startDate || ''} to ${selectedPayrun.endDate || ''}`.trim() || 'N/A',
+          structureId: selectedPayrun.structureId,
+          structureName: selectedPayrun.structureName,
+          gross,
+          deductions,
+          net,
+          status: 'Computed',
+          earnings: earningsRows.length ? earningsRows : [{ description: 'Basic salary', amount: baseSalary }],
+          deductionsList: deductionRows.length ? deductionRows : [{ description: 'Standard deduction', amount: 0 }],
+          contract: employee.contractType || 'Full-time',
+          department: employee.department || 'General',
+          position: employee.position || 'Employee'
+        });
+        createdCount += 1;
+      }
+    }
+
+    if (createdCount || selectedPayrun.status === 'Draft') {
+      const updated = await api.update('payruns', selectedPayrun.id, { ...selectedPayrun, status: 'Computed' });
+      setPayruns(current => current.map(item => item.id === updated.id ? updated : item));
+      setSelectedPayrunId(updated.id);
+    }
+  };
+
+  const validatePayrun = async () => {
+    if (!selectedPayrun || selectedPayrun.status !== 'Computed') return;
+    const updated = await api.update('payruns', selectedPayrun.id, { ...selectedPayrun, status: 'Validated' });
+    const payslips = await api.list('payslips');
+    await Promise.all(payslips.filter(item => item.payrunId === selectedPayrun.id).map(item => api.update('payslips', item.id, { ...item, status: 'Validated' })));
+    setPayruns(current => current.map(item => item.id === updated.id ? updated : item));
+    setSelectedPayrunId(updated.id);
+  };
+
+  const markPayrunPaid = async () => {
+    if (!selectedPayrun || selectedPayrun.status !== 'Validated') return;
+    const updated = await api.update('payruns', selectedPayrun.id, { ...selectedPayrun, status: 'Paid' });
+    const payslips = await api.list('payslips');
+    await Promise.all(payslips.filter(item => item.payrunId === selectedPayrun.id).map(item => api.update('payslips', item.id, { ...item, status: 'Paid' })));
+    setPayruns(current => current.map(item => item.id === updated.id ? updated : item));
+    setSelectedPayrunId(updated.id);
+  };
+
   const payrunEmployees = selectedPayrun ? employees.filter(employee => {
     const ids = selectedPayrun.employeeIds || [];
     return ids.includes(employee.id) || ids.includes(employee.employeeId);
   }) : [];
 
+  const statusClass = status => {
+    const map = {
+      Draft: 'payroll-status payroll-status--draft',
+      Computed: 'payroll-status payroll-status--computed',
+      Validated: 'payroll-status payroll-status--validated',
+      Paid: 'payroll-status payroll-status--paid'
+    };
+    return map[status] || 'payroll-status payroll-status--draft';
+  };
+
+  const summaryCards = [
+    ['Total Employees', `${payrunEmployees.length}`, 'In selected payrun'],
+    ['Gross', `INR ${payrunEmployees.reduce((sum, employee) => sum + Number(employee.salary || 0), 0).toLocaleString('en-IN')}`, 'Base salary'],
+    ['Status', selectedPayrun?.status || 'Draft', 'Current state'],
+    ['Pay period', selectedPayrun ? `${selectedPayrun.startDate || '-'} to ${selectedPayrun.endDate || '-'}` : '—', 'Selected dates']
+  ];
+
   return <>
     <PageHeader eyebrow="Payroll / Payruns" title="Payruns" subtitle="Create payroll cycles, select employees, and review planned payroll runs before approval." action={<button className="btn btn-brand" onClick={() => setWizardOpen(true)}><i className="bi bi-plus-lg" />Create new payrun</button>} />
 
-    <section className="content-panel">
-      <div className="panel-heading">
-        <div>
-          <h2>Recent payruns</h2>
-          <p>Live payroll runs from the workspace database.</p>
+    <div className="payroll-toolbar">
+      <div className="payroll-toolbar-left">
+        <div className="payroll-search"><i className="bi bi-search" /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search employees" /></div>
+      </div>
+    </div>
+
+    <div className="payrun-form-layout">
+      <div className="payroll-table-panel" style={{ padding: 0 }}>
+        <div className="payroll-table-wrap">
+          <table className="payroll-table">
+            <thead>
+              <tr>
+                <th>Payrun</th>
+                <th>Period</th>
+                <th>Employees</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {payruns.length ? payruns.map(payrun => <tr key={payrun.id} onClick={() => setSelectedPayrunId(payrun.id)} style={{ cursor: 'pointer', background: selectedPayrunId === payrun.id ? 'rgba(113,75,103,.08)' : 'transparent' }}>
+                <td><strong>{payrun.name || 'Payroll run'}</strong><small>{findStructureName(payrun.structureId)}</small></td>
+                <td>{payrun.startDate || '-'}<br />{payrun.endDate || '-'}</td>
+                <td>{(payrun.employeeIds || []).length}</td>
+                <td><span className={statusClass(payrun.status || 'Draft')}>{payrun.status || 'Draft'}</span></td>
+              </tr>) : <tr><td colSpan="4" className="empty-state">No payruns created yet.</td></tr>}
+            </tbody>
+          </table>
         </div>
       </div>
 
-      <div className="table-responsive">
-        <table className="resource-table">
-          <thead>
-            <tr>
-              <th>Payrun</th>
-              <th>Period</th>
-              <th>Structure</th>
-              <th>Employees</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {payruns.length ? payruns.map(payrun => <tr key={payrun.id} onClick={() => setSelectedPayrunId(payrun.id)} style={{ cursor: 'pointer' }}>
-              <td>{payrun.name || 'Payroll run'}</td>
-              <td>{payrun.startDate || '-'} to {payrun.endDate || '-'}</td>
-              <td>{findStructureName(payrun.structureId)}</td>
-              <td>{(payrun.employeeIds || []).length}</td>
-              <td><span className="status-pill" style={{ background: '#ecfdf5', color: '#166534', padding: '0.25rem 0.5rem', borderRadius: '999px', fontSize: '12px' }}>{payrun.status || 'Draft'}</span></td>
-            </tr>) : <tr><td colSpan="5" className="empty-state">No payruns created yet.</td></tr>}
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    {wizardOpen && <div className="modal-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(2, 6, 23, 0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
-      <div className="content-panel" style={{ width: 'min(980px, 100%)', background: '#111827', color: '#e5e7eb', border: '1px solid rgba(148,163,184,0.2)', borderRadius: '18px', boxShadow: '0 24px 60px rgba(15, 23, 42, 0.6)' }}>
-        <div className="panel-heading" style={{ borderBottom: '1px solid rgba(148,163,184,0.2)', paddingBottom: '0.9rem', marginBottom: '1rem' }}>
-          <div>
-            <h2 style={{ margin: 0, fontSize: '2rem' }}>Create payrun</h2>
-            <p style={{ margin: '0.4rem 0 0', color: '#9ca3af' }}>Set the salary structure and payroll period, then select employees.</p>
+      <div className="payrun-form-panel payrun-form-side" style={{ padding: 0 }}>
+        {selectedPayrun ? <>
+          <div className="payrun-detail-header">
+            <div>
+              <div className="eyebrow"><span className="eyebrow-dot" />Payroll</div>
+              <h1>{selectedPayrun.name}</h1>
+            </div>
+            <span className={statusClass(selectedPayrun.status || 'Draft')}>{selectedPayrun.status || 'Draft'}</span>
           </div>
-          <button type="button" className="btn btn-quiet" onClick={resetWizard} style={{ background: 'transparent', color: '#e5e7eb', borderColor: 'rgba(148,163,184,0.35)' }}><i className="bi bi-x-lg" /></button>
+
+          <div className="payrun-actions" style={{ marginBottom: '1.25rem' }}>
+            <button type="button" className="btn btn-brand" disabled={selectedPayrun.status !== 'Draft'} onClick={computePayrun}>Compute Payroll</button>
+            <button type="button" className="btn btn-quiet" disabled={selectedPayrun.status !== 'Computed'} onClick={validatePayrun}>Validate</button>
+            <button type="button" className="btn btn-quiet" disabled={selectedPayrun.status !== 'Validated'} onClick={markPayrunPaid}>Mark as Paid</button>
+          </div>
+
+          <div className="payrun-summary-grid">
+            {summaryCards.map(([label, value, note]) => <div className="payrun-summary-card" key={label}><span>{label}</span><strong>{value}</strong><small style={{ display: 'block', marginTop: '6px', color: '#6b7280', fontSize: '10px' }}>{note}</small></div>)}
+          </div>
+
+          <div className="table-responsive" style={{ marginTop: '1rem' }}>
+            <table className="selection-table">
+              <thead>
+                <tr>
+                  <th>Employee ID</th>
+                  <th>Employee</th>
+                  <th>Schedule</th>
+                  <th>Salary</th>
+                </tr>
+              </thead>
+              <tbody>
+                {payrunEmployees.length ? payrunEmployees.map(employee => <tr key={employee.id}>
+                  <td>{employee.employeeId || employee.id}</td>
+                  <td>{`${employee.firstName || ''} ${employee.lastName || ''}`.trim() || employee.email || 'Employee'}</td>
+                  <td>{employee.schedule || 'Not assigned'}</td>
+                  <td className="payroll-money">{formatCurrency(employee.salary || 0)}</td>
+                </tr>) : <tr><td colSpan="4" className="empty-state">No employees selected.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </> : <div className="content-panel" style={{ padding: '1.5rem' }}><p className="empty-state">Select a payrun to view details.</p></div>}
+      </div>
+    </div>
+
+    {wizardOpen && <div className="modal-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(2, 6, 23, 0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100, padding: '1.25rem' }}>
+      <div className="content-panel" style={{ width: 'min(980px, 100%)', background: '#111827', borderRadius: '18px', boxShadow: '0 20px 60px rgba(0,0,0,.45)' }}>
+        <div className="panel-heading" style={{ borderBottom: '1px solid var(--border)', paddingBottom: '1rem', marginBottom: '1.2rem' }}>
+          <div>
+            <h2>Create payrun</h2>
+            <p className="page-subtitle" style={{ fontSize: '12px', marginTop: '0.35rem' }}>Select the salary structure and pay period, then choose employees.</p>
+          </div>
+          <button type="button" className="btn btn-quiet" onClick={resetWizard}><i className="bi bi-x-lg" /></button>
         </div>
 
         {wizardStep === 'setup' ? <>
-          <div className="resource-form-grid" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '1rem' }}>
+          <div className="payrun-form-grid">
             <div className="form-field">
               <label className="form-label" htmlFor="payrun-structure">Pay structure</label>
               <select id="payrun-structure" className="form-select" value={draft.structureId} onChange={event => setDraft(current => ({ ...current, structureId: event.target.value }))}>
@@ -425,37 +568,31 @@ function PayrunPage() {
               <label className="form-label" htmlFor="payrun-start">Period start date</label>
               <input id="payrun-start" type="date" className="form-control" value={draft.startDate} onChange={event => setDraft(current => ({ ...current, startDate: event.target.value }))} />
             </div>
-            <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+            <div className="form-field span-2">
               <label className="form-label" htmlFor="payrun-end">Period end date</label>
               <input id="payrun-end" type="date" className="form-control" value={draft.endDate} onChange={event => setDraft(current => ({ ...current, endDate: event.target.value }))} />
             </div>
           </div>
-
           {error && <p className="form-error" style={{ marginTop: '1rem' }}>{error}</p>}
-
-          <div className="form-actions" style={{ marginTop: '1.25rem', justifyContent: 'flex-end' }}>
+          <div className="form-actions" style={{ justifyContent: 'flex-end', marginTop: '1.25rem' }}>
             <button type="button" className="btn btn-quiet" onClick={resetWizard}>Cancel</button>
             <button type="button" className="btn btn-brand" onClick={continueToEmployees}>Continue</button>
           </div>
         </> : <>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
-            <div className="form-field" style={{ flex: '1 1 320px', maxWidth: '450px', marginBottom: 0 }}>
-              <label className="form-label" htmlFor="payrun-search">Search employee</label>
-              <input id="payrun-search" className="form-control" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search by name, ID, department or position" />
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', color: '#cbd5e1' }}>
-              <span>{pageStart}-{pageEnd}/{filteredEmployees.length} employees</span>
+          <div className="employee-selection-toolbar">
+            <div className="payroll-search" style={{ width: '100%', maxWidth: '420px' }}><i className="bi bi-search" /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search by name, employee ID or department" /></div>
+            <div className="selection-count">{pageStart}-{pageEnd}/{filteredEmployees.length} employees</div>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
               <button type="button" className="btn btn-quiet btn-sm" disabled={page === 1} onClick={() => setPage(current => Math.max(1, current - 1))}><i className="bi bi-chevron-left" /></button>
-              <span>{page}/{totalPages}</span>
               <button type="button" className="btn btn-quiet btn-sm" disabled={page >= totalPages} onClick={() => setPage(current => Math.min(totalPages, current + 1))}><i className="bi bi-chevron-right" /></button>
             </div>
           </div>
 
           <div className="table-responsive">
-            <table className="resource-table" style={{ background: 'rgba(15, 23, 42, 0.4)' }}>
+            <table className="selection-table">
               <thead>
                 <tr>
-                  <th style={{ width: '80px' }}>Select</th>
+                  <th style={{ width: '60px' }}>Select</th>
                   <th>Employee ID</th>
                   <th>Employee</th>
                   <th>Working schedule</th>
@@ -468,15 +605,14 @@ function PayrunPage() {
                   <td>{employee.employeeId || employee.id}</td>
                   <td>{`${employee.firstName || ''} ${employee.lastName || ''}`.trim() || employee.email || 'Employee'}</td>
                   <td>{employee.schedule || 'Not assigned'}</td>
-                  <td>{formatCurrency(employee.salary || 0)}</td>
+                  <td className="payroll-money">{formatCurrency(employee.salary || 0)}</td>
                 </tr>) : <tr><td colSpan="5" className="empty-state">No employees match your search.</td></tr>}
               </tbody>
             </table>
           </div>
 
           {error && <p className="form-error" style={{ marginTop: '1rem' }}>{error}</p>}
-
-          <div className="form-actions" style={{ marginTop: '1.25rem', justifyContent: 'space-between' }}>
+          <div className="form-actions" style={{ justifyContent: 'space-between', marginTop: '1.25rem' }}>
             <button type="button" className="btn btn-quiet" onClick={() => setWizardStep('setup')}>Back</button>
             <div style={{ display: 'flex', gap: '0.75rem' }}>
               <button type="button" className="btn btn-quiet" onClick={resetWizard}>Cancel</button>
@@ -486,6 +622,214 @@ function PayrunPage() {
         </>}
       </div>
     </div>}
+  </>;
+}
+
+function PayslipPage() {
+  const [payslips, setPayslips] = useState([]);
+  const [payruns, setPayruns] = useState([]);
+  const [employees, setEmployees] = useState([]);
+  const [selectedId, setSelectedId] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.all([
+      api.list('payslips'),
+      api.list('payruns'),
+      api.list('employees')
+    ])
+      .then(([payslipItems, payrunItems, employeeItems]) => {
+        setPayslips(payslipItems);
+        setPayruns(payrunItems);
+        setEmployees(employeeItems);
+        if (!selectedId && payslipItems.length) setSelectedId(payslipItems[0].id);
+      })
+      .catch(() => {
+        setPayslips([]);
+        setPayruns([]);
+        setEmployees([]);
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const selectedPayslip = payslips.find(item => item.id === selectedId) || payslips[0] || null;
+  const payrun = payruns.find(item => item.id === selectedPayslip?.payrunId) || null;
+  const employee = employees.find(item => item.id === selectedPayslip?.employeeId || item.employeeId === selectedPayslip?.employeeId) || {};
+  const statusClass = status => {
+    const map = {
+      Draft: 'payroll-status payroll-status--draft',
+      Computed: 'payroll-status payroll-status--computed',
+      Validated: 'payroll-status payroll-status--validated',
+      Paid: 'payroll-status payroll-status--paid',
+      Pending: 'payroll-status payroll-status--computed'
+    };
+    return map[status] || 'payroll-status payroll-status--draft';
+  };
+
+  const downloadPayslip = (item = selectedPayslip) => {
+    if (!item) return;
+
+    const relatedEmployee = employees.find(employeeItem => employeeItem.id === item.employeeId || employeeItem.employeeId === item.employeeId) || employee;
+    const relatedPayrun = payruns.find(payrunItem => payrunItem.id === item.payrunId) || payrun;
+    const employeeName = item.employeeName || `${relatedEmployee.firstName || ''} ${relatedEmployee.lastName || ''}`.trim() || 'Employee';
+    const employeeNumber = item.employeeNumber || relatedEmployee.employeeId || relatedEmployee.id || 'N/A';
+    const period = item.period || `${relatedPayrun?.startDate || ''} - ${relatedPayrun?.endDate || ''}`;
+    const earnings = item.earnings || [{ description: 'Basic salary', amount: Number(item.gross || 0) }];
+    const deductions = item.deductionsList || [{ description: 'Standard deduction', amount: Number(item.deductions || 0) }];
+
+    const rows = [
+      ...earnings.map(row => `<tr><td>${(row.description || 'Earning').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</td><td>INR ${Number(row.amount || 0).toLocaleString('en-IN')}</td></tr>`),
+      ...deductions.map(row => `<tr><td>${(row.description || 'Deduction').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</td><td>INR ${Number(row.amount || 0).toLocaleString('en-IN')}</td></tr>`)
+    ].join('');
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8" /><title>Payslip ${item.id}</title><style>body{font-family:Arial,sans-serif;padding:32px;color:#111827}h1{margin:0 0 12px}table{width:100%;border-collapse:collapse;margin-top:16px}th,td{border:1px solid #d1d5db;padding:10px 12px;text-align:left}th{background:#f3f4f6}.totals{margin-top:18px;display:flex;flex-direction:column;gap:8px;align-items:flex-end}.meta{display:grid;grid-template-columns:repeat(2,minmax(180px,1fr));gap:12px;margin:16px 0}.label{font-size:12px;color:#6b7280}.value{font-weight:700}.badge{display:inline-block;padding:6px 10px;border-radius:999px;background:#f3f4f6;font-weight:700}</style></head><body><h1>PeoplePay360 Payslip</h1><div class="badge">${item.status || 'Pending'}</div><div class="meta"><div><div class="label">Employee Name</div><div class="value">${employeeName.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div></div><div><div class="label">Employee ID</div><div class="value">${employeeNumber}</div></div><div><div class="label">Payrun</div><div class="value">${(item.payrunName || relatedPayrun?.name || 'Payroll Run').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div></div><div><div class="label">Period</div><div class="value">${period}</div></div></div><table><thead><tr><th>Description</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table><div class="totals"><div>Gross: INR ${Number(item.gross || 0).toLocaleString('en-IN')}</div><div>Deductions: INR ${Number(item.deductions || 0).toLocaleString('en-IN')}</div><div><strong>Net Salary: INR ${Number(item.net || 0).toLocaleString('en-IN')}</strong></div></div></body></html>`;
+
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${(employeeNumber || 'payslip').replace(/\s+/g, '-')}-${(item.id || 'download')}.html`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  if (loading) return <div className="content-panel"><p className="empty-state">Loading payslips...</p></div>;
+
+  return <>
+    <PageHeader eyebrow="Payroll / Payslips" title="Payslips" subtitle="Review payroll results generated from valid payruns and approved employee records." />
+
+    <section className="content-panel" style={{ marginBottom: '1.25rem' }}>
+      <div className="panel-heading">
+        <div>
+          <h2>Payslip list</h2>
+          <p>Only payslips generated from payruns appear here.</p>
+        </div>
+      </div>
+      <div className="table-responsive">
+        <table className="payslip-table">
+          <thead>
+            <tr>
+              <th>Employee</th>
+              <th>Payslip Number</th>
+              <th>Payrun</th>
+              <th>Period</th>
+              <th>Gross Salary</th>
+              <th>Deductions</th>
+              <th>Net Salary</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {payslips.length ? payslips.map(item => <tr key={item.id} onClick={() => setSelectedId(item.id)} style={{ cursor: 'pointer', background: selectedId === item.id ? 'rgba(113,75,103,.08)' : 'transparent' }}>
+              <td><strong>{item.employeeName || employee?.firstName || 'Employee'}</strong></td>
+              <td>{item.id}</td>
+              <td>{item.payrunName || payrun?.name || item.payrunId}</td>
+              <td>{item.period || `${payrun?.startDate || ''} - ${payrun?.endDate || ''}`}</td>
+              <td className="payroll-money">INR {Number(item.gross || 0).toLocaleString('en-IN')}</td>
+              <td className="payroll-money">INR {Number(item.deductions || 0).toLocaleString('en-IN')}</td>
+              <td className="payslip-net">INR {Number(item.net || 0).toLocaleString('en-IN')}</td>
+              <td><span className={statusClass(item.status)}>{item.status || 'Pending'}</span></td>
+              <td>
+                <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                  <button type="button" className="btn btn-quiet btn-sm" onClick={event => { event.stopPropagation(); setSelectedId(item.id); }}>View</button>
+                  <button type="button" className="btn btn-brand btn-sm" onClick={event => { event.stopPropagation(); setSelectedId(item.id); downloadPayslip(item); }}>Download</button>
+                </div>
+              </td>
+            </tr>) : <tr><td colSpan="9" className="empty-state">No payslips available yet. Create and validate a payrun to generate them.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    {selectedPayslip && <section className="payslip-detail-layout">
+      <div className="payslip-document">
+        <div className="payslip-document-header">
+          <div>
+            <div className="payslip-brand">PeoplePay360</div>
+            <h2>{selectedPayslip.id}</h2>
+            <p>Payroll period {selectedPayslip.period || `${payrun?.startDate || ''} - ${payrun?.endDate || ''}`}</p>
+          </div>
+          <span className={statusClass(selectedPayslip.status)}>{selectedPayslip.status || 'Pending'}</span>
+        </div>
+
+        <div className="payslip-person-box">
+          <div>
+            <span>Employee Name</span>
+            <strong>{selectedPayslip.employeeName || `${employee.firstName || ''} ${employee.lastName || ''}`.trim() || 'Employee'}</strong>
+          </div>
+          <div>
+            <span>Employee ID</span>
+            <strong>{selectedPayslip.employeeNumber || employee.employeeId || employee.id || '-'}</strong>
+          </div>
+          <div>
+            <span>Department</span>
+            <strong>{selectedPayslip.department || employee.department || '-'}</strong>
+          </div>
+          <div>
+            <span>Position</span>
+            <strong>{selectedPayslip.position || employee.position || '-'}</strong>
+          </div>
+        </div>
+
+        <table className="payslip-line-items">
+          <thead>
+            <tr>
+              <th>Description</th>
+              <th>Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="section-row"><td colSpan="2">Earnings</td></tr>
+            {(selectedPayslip.earnings || [{ description: 'Basic salary', amount: selectedPayslip.gross || 0 }]).map((row, index) => <tr key={`earn-${index}`}><td>{row.description}</td><td>INR {Number(row.amount || 0).toLocaleString('en-IN')}</td></tr>)}
+            <tr className="section-row"><td colSpan="2">Deductions</td></tr>
+            {(selectedPayslip.deductionsList || [{ description: 'Standard deduction', amount: selectedPayslip.deductions || 0 }]).map((row, index) => <tr key={`ded-${index}`}><td>{row.description}</td><td>INR {Number(row.amount || 0).toLocaleString('en-IN')}</td></tr>)}
+          </tbody>
+        </table>
+
+        <div className="payslip-total">
+          <span>Gross Salary</span>
+          <strong>INR {Number(selectedPayslip.gross || 0).toLocaleString('en-IN')}</strong>
+        </div>
+        <div className="payslip-total">
+          <span>Total Deductions</span>
+          <strong>INR {Number(selectedPayslip.deductions || 0).toLocaleString('en-IN')}</strong>
+        </div>
+
+        <div className="payslip-net-box">
+          <span>Net Salary</span>
+          <strong>INR {Number(selectedPayslip.net || 0).toLocaleString('en-IN')}</strong>
+        </div>
+      </div>
+
+      <aside className="payslip-side">
+        <h2>Payroll Information</h2>
+        <div className="payslip-person-box" style={{ paddingTop: 0 }}>
+          <div>
+            <span>Payrun</span>
+            <strong>{selectedPayslip.payrunName || payrun?.name || '-'}</strong>
+          </div>
+          <div>
+            <span>Payroll Period</span>
+            <strong>{selectedPayslip.period || `${payrun?.startDate || ''} - ${payrun?.endDate || ''}`}</strong>
+          </div>
+          <div>
+            <span>Contract</span>
+            <strong>{selectedPayslip.contract || employee.contractType || '-'}</strong>
+          </div>
+          <div>
+            <span>Salary Structure</span>
+            <strong>{selectedPayslip.structureName || payrun?.structureName || '-'}</strong>
+          </div>
+        </div>
+        <div className="payslip-side-actions">
+          <button type="button" className="btn btn-brand" onClick={() => downloadPayslip(selectedPayslip)}>Download payslip</button>
+          <button type="button" className="btn btn-quiet" onClick={() => setSelectedId(null)}>Back to list</button>
+        </div>
+      </aside>
+    </section>}
   </>;
 }
 
@@ -1000,11 +1344,13 @@ function App() {
         ? <ReportPage />
         : info.slug === 'payruns'
           ? <PayrunPage />
-          : info.slug === 'salary-structures'
-            ? <SalaryStructuresPage />
-            : info.slug === 'salary-rules'
-              ? <SalaryRulesPage />
-              : <ResourcePage slug={info.slug} mode={info.mode} />;
+          : info.slug === 'payslips'
+            ? <PayslipPage />
+            : info.slug === 'salary-structures'
+              ? <SalaryStructuresPage />
+              : info.slug === 'salary-rules'
+                ? <SalaryRulesPage />
+                : <ResourcePage slug={info.slug} mode={info.mode} />;
   return <Shell active={info.slug || ''}>{content}</Shell>;
 }
 
