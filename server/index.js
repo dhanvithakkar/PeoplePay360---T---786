@@ -859,6 +859,21 @@ app.post('/api/payruns/:id/compute', (req, res) => {
   const employeeIds = new Set(payrun.employeeIds || []);
   const employees = readRecords('employees').filter(employee => employeeIds.has(employee.id) || employeeIds.has(employee.employeeId));
   if (!employees.length) return res.status(400).json({ error: 'Select at least one employee before computing payroll.' });
+  const onboarding = readRecords('onboarding');
+  const incompleteOnboarding = employees.filter(employee => !onboarding.some(record =>
+    record.status === 'Completed' && (
+      record.userId === employee.userId ||
+      record.employeeId === employee.employeeId ||
+      record.employeeId === employee.id ||
+      record.email?.toLowerCase() === employee.email?.toLowerCase()
+    )
+  ));
+  if (incompleteOnboarding.length) {
+    return res.status(422).json({
+      error: `Cannot compute payroll: onboarding is not completed for ${incompleteOnboarding.length} selected employee(s).`,
+      incompleteOnboarding: incompleteOnboarding.map(employee => employee.employeeId || employee.id)
+    });
+  }
   const attendance = readRecords('attendance');
   const leaveRequests = readRecords('leaveRequests');
   const leaveTypes = readRecords('leaveTypes');

@@ -109,7 +109,8 @@ function Shell({ children, active }) {
 }
 
 function PageHeader({ eyebrow = 'Workspace', title, subtitle, action }) {
-  return <section className="page-header"><div><div className="eyebrow"><span className="eyebrow-dot" />{eyebrow}</div><h1>{title}</h1><p className="page-subtitle">{subtitle}</p></div>{action}</section>;
+  const roleClass = currentAccount()?.role === 'HR Manager' ? ' page-header--hr-manager' : '';
+  return <section className={`page-header${roleClass}`}><div><div className="eyebrow"><span className="eyebrow-dot" />{eyebrow}</div><h1>{title}</h1><p className="page-subtitle">{subtitle}</p></div>{action}</section>;
 }
 
 function formatValue(value) {
@@ -278,6 +279,7 @@ function ResourcePage({ slug, mode }) {
 function PayrunPage() {
   const [payruns, setPayruns] = useState([]);
   const [employees, setEmployees] = useState([]);
+  const [onboarding, setOnboarding] = useState([]);
   const [salaryStructures, setSalaryStructures] = useState([]);
   const [selectedPayrunId, setSelectedPayrunId] = useState(null);
   const [wizardOpen, setWizardOpen] = useState(false);
@@ -288,20 +290,22 @@ function PayrunPage() {
   const [error, setError] = useState('');
 
   const loadData = async () => {
-    const [payrunItems, structureItems, employeeItems] = await Promise.all([
+    const [payrunItems, structureItems, employeeItems, onboardingItems] = await Promise.all([
       api.list('payruns'),
       api.list('salaryStructures'),
-      api.list('employees')
+      api.list('employees'),
+      api.list('onboarding')
     ]);
     setPayruns(payrunItems);
     setSalaryStructures(structureItems);
     setEmployees(employeeItems);
+    setOnboarding(onboardingItems);
     if (!selectedPayrunId && payrunItems.length) {
       setSelectedPayrunId(payrunItems[0].id);
     }
   };
 
-  useEffect(() => { loadData().catch(() => { setPayruns([]); setSalaryStructures([]); setEmployees([]); }); }, []);
+  useEffect(() => { loadData().catch(() => { setPayruns([]); setSalaryStructures([]); setEmployees([]); setOnboarding([]); }); }, []);
 
   useEffect(() => {
     if (selectedPayrunId && !payruns.some(item => item.id === selectedPayrunId)) {
@@ -314,8 +318,15 @@ function PayrunPage() {
   const formatCurrency = value => `INR ${Number(value || 0).toLocaleString('en-IN')}`;
   const findStructureName = id => salaryStructures.find(item => item.id === id || item.name === id)?.name || id || 'General';
   const selectedPayrun = payruns.find(item => item.id === selectedPayrunId) || null;
+  const isOnboarded = employee => onboarding.some(record => record.status === 'Completed' && (
+    record.userId === employee.userId ||
+    record.employeeId === employee.employeeId ||
+    record.employeeId === employee.id ||
+    record.email?.toLowerCase() === employee.email?.toLowerCase()
+  ));
+  const eligibleEmployees = employees.filter(isOnboarded);
 
-  const filteredEmployees = employees.filter(employee => {
+  const filteredEmployees = eligibleEmployees.filter(employee => {
     const haystack = [employee.employeeId, employee.firstName, employee.lastName, employee.department, employee.position, employee.email].join(' ').toLowerCase();
     return haystack.includes(search.toLowerCase());
   });
@@ -409,7 +420,7 @@ function PayrunPage() {
     setSelectedPayrunId(updated.id);
   };
 
-  const payrunEmployees = selectedPayrun ? employees.filter(employee => {
+  const payrunEmployees = selectedPayrun ? eligibleEmployees.filter(employee => {
     const ids = selectedPayrun.employeeIds || [];
     return ids.includes(employee.id) || ids.includes(employee.employeeId);
   }) : [];
@@ -551,6 +562,7 @@ function PayrunPage() {
               <button type="button" className="btn btn-quiet btn-sm" disabled={page >= totalPages} onClick={() => setPage(current => Math.min(totalPages, current + 1))}><i className="bi bi-chevron-right" /></button>
             </div>
           </div>
+          {eligibleEmployees.length < employees.length && <p className="form-warning">Only employees with completed onboarding are available for payroll. {employees.length - eligibleEmployees.length} employee(s) are still onboarding.</p>}
 
           <div className="table-responsive">
             <table className="selection-table">
@@ -1282,7 +1294,13 @@ function WorkflowAlerts() {
 
 function PayrollDashboard() {
   const [data, setData] = useState({});
-  useEffect(() => { Promise.all(['employees', 'departments', 'attendance', 'leaveRequests', 'payruns', 'payslips'].map(key => api.list(key).then(items => [key, items]))).then(entries => setData(Object.fromEntries(entries))); }, []);
+  const account = currentAccount();
+  useEffect(() => {
+    const collections = ['employees', 'departments', 'attendance', 'leaveRequests'];
+    if (['Admin', 'HR Payroll User', 'HR Payroll Manager'].includes(account?.role)) collections.push('payruns', 'payslips');
+    Promise.all(collections.map(key => api.list(key).then(items => [key, items]).catch(() => [key, []])))
+      .then(entries => setData(Object.fromEntries(entries)));
+  }, [account?.role]);
   const employees = data.employees || [], payslips = data.payslips || [];
   const totalNet = payslips.reduce((sum, item) => sum + Number(item.net || 0), 0);
   return <><PageHeader eyebrow="Payroll / Overview" title="Payroll Dashboard" subtitle="Dashboard showing key payroll KPIs and useful insights with cards, charts, and summaries." /><section className="payroll-kpi-grid dashboard-kpi-grid">{[['Total Net Salary Paid', `INR ${totalNet.toLocaleString()}`, 'From generated payslips'], ['Payslips Generated', payslips.length, payslips.length ? 'Ready for review' : 'No data available yet'], ['Avg Salary / Employee', `INR ${employees.length ? Math.round(employees.reduce((s, e) => s + Number(e.salary || 0), 0) / employees.length).toLocaleString() : 0}`, 'Based on employee records'], ['Approved Time Off Days', (data.leaveRequests || []).filter(item => item.status === 'Approved').length, 'Approved requests'], ['Attendance Health', employees.length ? `${Math.round(((data.attendance || []).filter(item => item.status === 'Present').length / employees.length) * 100)}%` : '0%', 'Current workspace']].map(([label, value, note]) => <article className="metric-card dashboard-kpi" key={label}><div className="metric-card-label">{label}</div><div className="metric-card-value">{value}</div><div className="metric-card-note">{note}</div></article>)}</section><section className="dashboard-panels"><article className="content-panel"><div className="panel-heading"><div><h2>Workspace overview</h2><p>Live counts from your HR and payroll records.</p></div></div><div className="overview-list">{[['Employees', employees.length, '/employees'], ['Departments', (data.departments || []).length, '/departments'], ['Attendance records', (data.attendance || []).length, '/attendance'], ['Open payruns', (data.payruns || []).filter(item => item.status !== 'Paid').length, '/payruns']].map(([label, count, link]) => <a href={link} onClick={event => { event.preventDefault(); window.history.pushState({}, '', link); window.dispatchEvent(new PopStateEvent('popstate')); }} className="overview-item" key={label}><span>{label}</span><strong>{count}</strong><i className="bi bi-arrow-up-right" /></a>)}</div></article><article className="content-panel"><div className="panel-heading"><div><h2>Models to aggregate</h2><p>Entities available to build useful payroll insights.</p></div></div><ul className="payroll-model-list"><li>Employees / Departments</li><li>Contracts</li><li>Payruns / Payslips</li><li>Attendance</li><li>Time Off Requests / Allocations</li></ul></article></section></>;
